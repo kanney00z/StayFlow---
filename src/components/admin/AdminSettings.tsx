@@ -5,28 +5,48 @@ import {
   Wifi, Phone, Mail, Save, CheckCircle2, QrCode, Shield,
   Trash2, AlertTriangle, RotateCcw, Database, RefreshCw
 } from 'lucide-react';
-import { PropertyProfile, UtilityRateConfig } from '../../types';
+import { PropertyProfile, UtilityRateConfig, Room, Tenant, Booking, UtilityBill } from '../../types';
+import { SupabaseSettingsSection } from './SupabaseSettingsSection';
 
 interface AdminSettingsProps {
   property: PropertyProfile;
   utilityConfig: UtilityRateConfig;
+  rooms?: Room[];
+  tenants?: Tenant[];
+  bookings?: Booking[];
+  bills?: UtilityBill[];
   onUpdateProperty: (newProp: PropertyProfile) => void;
   onUpdateUtilityConfig: (newConfig: UtilityRateConfig) => void;
   onClearBookings?: () => void;
   onClearBills?: () => void;
   onResetMeters?: () => void;
   onResetDemoData?: () => void;
+  onDataSyncedFromCloud?: (data: {
+    property?: PropertyProfile;
+    utilityConfig?: UtilityRateConfig;
+    rooms?: Room[];
+    tenants?: Tenant[];
+    bookings?: Booking[];
+    bills?: UtilityBill[];
+  }) => void;
+  isRealtimeConnected?: boolean;
 }
 
 export const AdminSettings: React.FC<AdminSettingsProps> = ({
   property,
   utilityConfig,
+  rooms = [],
+  tenants = [],
+  bookings = [],
+  bills = [],
   onUpdateProperty,
   onUpdateUtilityConfig,
   onClearBookings,
   onClearBills,
   onResetMeters,
   onResetDemoData,
+  onDataSyncedFromCloud,
+  isRealtimeConnected = false,
 }) => {
   const [propForm, setPropForm] = useState<PropertyProfile>(property);
   const [utilForm, setUtilForm] = useState<UtilityRateConfig>(utilityConfig);
@@ -355,7 +375,19 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
         </div>
       </div>
 
-      {/* Section 3: System Data Management & Cleanup (เคลียร์และล้างข้อมูลระบบ) */}
+      {/* Section 3: Supabase Cloud Database & Real-Time Sync */}
+      <SupabaseSettingsSection
+        property={property}
+        utilityConfig={utilityConfig}
+        rooms={rooms}
+        tenants={tenants}
+        bookings={bookings}
+        bills={bills}
+        onDataSyncedFromCloud={onDataSyncedFromCloud}
+        isRealtimeConnected={isRealtimeConnected}
+      />
+
+      {/* Section 4: System Data Management & Cleanup (เคลียร์และล้างข้อมูลระบบ) */}
       <div className="bg-white border border-rose-100 rounded-2xl md:rounded-3xl p-6 shadow-sm space-y-4">
         <div className="flex items-center gap-2 border-b border-rose-100 pb-3">
           <Database className="w-5 h-5 text-rose-600" />

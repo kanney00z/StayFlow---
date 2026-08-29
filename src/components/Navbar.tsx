@@ -1,8 +1,8 @@
 import React from 'react';
 import { 
   Building2, LayoutDashboard, DoorClosed, Calculator, 
-  Users, Settings, Sparkles, BedDouble, CalendarCheck, ShieldCheck, 
-  ExternalLink, Moon, Sun, Bell
+  Users, Settings, BedDouble, ShieldCheck, 
+  Radio, Database, CloudCheck, RefreshCw
 } from 'lucide-react';
 import { PropertyProfile } from '../types';
 
@@ -13,6 +13,8 @@ interface NavbarProps {
   onSelectAdminTab: (tab: 'dashboard' | 'rooms' | 'utilities' | 'bookings' | 'settings') => void;
   property: PropertyProfile;
   pendingBillsCount: number;
+  isRealtimeConnected?: boolean;
+  isSupabaseConfigured?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -22,6 +24,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectAdminTab,
   property,
   pendingBillsCount,
+  isRealtimeConnected = false,
+  isSupabaseConfigured = false,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white shadow-sm">
@@ -41,6 +45,29 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="hidden sm:inline-block px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-md text-[10px] font-bold">
                   ResiAdmin
                 </span>
+                {/* Real-time Status Badge */}
+                {isSupabaseConfigured ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectAdminTab('settings')}
+                    className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-400 rounded-full text-[10px] font-medium transition-colors cursor-pointer"
+                    title="ระบบเชื่อมต่อฐานข้อมูล Supabase แบบ Real-Time ทุกเครื่องอัปเดตตรงกันทันที"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span className="hidden md:inline">Supabase Real-Time</span>
+                    <span className="md:hidden">Live</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onSelectAdminTab('settings')}
+                    className="hidden sm:flex items-center gap-1 px-2 py-0.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 rounded-full text-[10px] transition-colors cursor-pointer"
+                    title="กดที่นี่เพื่อเชื่อมต่อ Supabase Database สำหรับซิงค์ข้อมูลข้ามอุปกรณ์แบบ Real-Time"
+                  >
+                    <Database className="w-2.5 h-2.5 text-amber-400" />
+                    <span>เชื่อมต่อ Cloud</span>
+                  </button>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 line-clamp-1 hidden md:block">
                 ระบบจัดการห้องพักรายวัน-รายเดือน & คิดค่าน้ำค่าไฟอัตโนมัติ
