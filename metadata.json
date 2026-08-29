@@ -1,0 +1,6 @@
+{
+  "name": "StayFlow - ระบบจัดการห้องพัก & คิดค่าน้ำค่าไฟ",
+  "description": "ระบบจองห้องพักรายวันและรายเดือน พร้อมระบบคิดค่าน้ำค่าไฟอัตโนมัติจากเลขมิเตอร์ ออกใบเสร็จ และระบบหลังบ้านแอดมินระดับพรีเมียม",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
