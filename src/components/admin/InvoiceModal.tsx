@@ -153,25 +153,34 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
     }
   };
 
-  const handleCopyLineText = () => {
-    const text = `📋 ใบแจ้งหนี้ห้อง ${bill.roomNumber} (${property.name})
-ประจำเดือน: ${bill.monthYear} (บิลลำดับที่ ${billSeqNumber} / ทั้งหมด ${roomBillsCount} บิลของห้องนี้)
-ผู้เช่า: ${bill.tenantName}
+  const getLineInvoiceText = () => {
+    return `📋 ใบแจ้งหนี้ห้อง ${bill.roomNumber} (${property.name})
+ประจำเดือน: ${bill.monthYear} (บิลลำดับที่ ${billSeqNumber} / ทั้งหมด ${roomBillsCount} บิล)
+ผู้เช่า: ${bill.tenantName} (โทร. ${bill.tenantPhone || '-'})
 ------------------------------
-1. ค่าเช่าห้อง: ${formatCurrency(bill.roomRentAmount)}
-2. ค่าน้ำประปา: ${bill.waterUnits} หน่วย (${bill.prevWaterMeter} ➔ ${bill.currWaterMeter}) = ${formatCurrency(bill.waterAmount)}
-3. ค่าไฟฟ้า: ${bill.elecUnits} หน่วย (${bill.prevElecMeter} ➔ ${bill.currElecMeter}) = ${formatCurrency(bill.elecAmount)}
+1. ค่าเช่าห้องพัก: ${formatCurrency(bill.roomRentAmount)}
+2. ค่าน้ำประปา (${bill.waterUnits} หน่วย): ${formatCurrency(bill.waterAmount)}
+3. ค่าไฟฟ้า (${bill.elecUnits} หน่วย): ${formatCurrency(bill.elecAmount)}
 ${bill.commonFee > 0 ? `4. ค่าส่วนกลาง: ${formatCurrency(bill.commonFee)}\n` : ''}${bill.internetFee > 0 ? `5. ค่าอินเทอร์เน็ต: ${formatCurrency(bill.internetFee)}\n` : ''}${bill.parkingFee > 0 ? `6. ค่าที่จอดรถ: ${formatCurrency(bill.parkingFee)}\n` : ''}${bill.trashFee > 0 ? `7. ค่าขยะ: ${formatCurrency(bill.trashFee)}\n` : ''}
 💰 รวมยอดที่ต้องชำระ: ${formatCurrency(bill.grandTotal)}
-${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${formatCurrency(bill.paidAmount)} (คงเหลือ: ${formatCurrency(Math.max(0, bill.grandTotal - bill.paidAmount))})\n` : ''}กำหนดชำระภายใน: ${formatDateThai(bill.dueDate)}
+${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${formatCurrency(bill.paidAmount)} (คงเหลือ: ${formatCurrency(Math.max(0, bill.grandTotal - bill.paidAmount))})\n` : ''}📅 กำหนดชำระภายใน: ${formatDateThai(bill.dueDate)}
 ------------------------------
 📲 โอนพร้อมเพย์: ${property.promptPayId} (${property.promptPayName})
-บัญชีธนาคาร: ${property.bankName} ${property.bankAccount}
+🏦 บัญชีธนาคาร: ${property.bankName} ${property.bankAccount} (${property.bankAccountName})
 ขอบคุณครับ/ค่ะ 🙏`;
+  };
 
+  const handleCopyLineText = () => {
+    const text = getLineInvoiceText();
     navigator.clipboard.writeText(text);
     setCopiedLine(true);
     setTimeout(() => setCopiedLine(false), 2500);
+  };
+
+  const handleOpenDirectLineShare = () => {
+    const text = getLineInvoiceText();
+    const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
+    window.open(lineUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -340,15 +349,28 @@ ${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${for
                       <span>{showQR ? 'ซ่อน PromptPay QR' : 'สแกนจ่าย PromptPay'}</span>
                     </button>
 
-                    <button
-                      type="button"
-                      id="btn-copy-line"
-                      onClick={handleCopyLineText}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-                    >
-                      {copiedLine ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Send className="w-3.5 h-3.5" />}
-                      <span>{copiedLine ? 'คัดลอกแล้ว!' : 'ส่ง LINE'}</span>
-                    </button>
+                    <div className="flex items-center rounded-xl bg-emerald-950/40 border border-emerald-500/40 p-0.5">
+                      <button
+                        type="button"
+                        id="btn-direct-line-share"
+                        onClick={handleOpenDirectLineShare}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+                        title="เปิดแอป LINE เพื่อเลือกแชทส่งให้ลูกค้าโดยตรง"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>เปิด LINE</span>
+                      </button>
+                      <button
+                        type="button"
+                        id="btn-copy-line"
+                        onClick={handleCopyLineText}
+                        className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-emerald-600/30 text-emerald-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                        title="คัดลอกข้อความสรุปบิลไปวางในแชท"
+                      >
+                        {copiedLine ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedLine ? 'คัดลอกแล้ว!' : 'คัดลอก'}</span>
+                      </button>
+                    </div>
 
                     <button
                       type="button"

@@ -3,7 +3,7 @@ import {
   FileText, Edit3, Check, Plus, Trash2, Printer, 
   Copy, Save, Building, User, Calendar, ShieldCheck, 
   AlertCircle, Sparkles, CheckCircle2, ChevronDown, ChevronUp,
-  RefreshCw, Scale, Download, CheckCircle
+  RefreshCw, Scale, Download, CheckCircle, Send
 } from 'lucide-react';
 import { LeaseContract, PropertyProfile, UtilityBill, Room, Tenant } from '../../types';
 import { formatCurrency, formatDateThai, addMonthsToDate } from '../../utils/formatters';
@@ -82,8 +82,8 @@ export const LeaseContractSection: React.FC<LeaseContractSectionProps> = ({
     });
   };
 
-  const handleCopyLineSummary = () => {
-    const text = `📜 หนังสือสัญญาเช่าห้องพัก ${contract.roomNumber} (${property.name})
+  const getLineContractText = () => {
+    return `📜 หนังสือสัญญาเช่าห้องพัก ${contract.roomNumber} (${property.name})
 เลขที่สัญญา: ${contract.contractNumber}
 ผู้ให้เช่า: ${contract.lessorName}
 ผู้เช่า: ${contract.lesseeName} (โทร. ${contract.lesseePhone})
@@ -95,10 +95,19 @@ export const LeaseContractSection: React.FC<LeaseContractSectionProps> = ({
 ---------------------------------
 📌 ข้อตกลงสำคัญ: มีระเบียบการพักอาศัย ${contract.rulesAndClauses.length} ข้อ
 ขอบคุณครับ/ค่ะ 🙏`;
+  };
 
+  const handleCopyLineSummary = () => {
+    const text = getLineContractText();
     navigator.clipboard.writeText(text);
     setCopiedLine(true);
     setTimeout(() => setCopiedLine(false), 2500);
+  };
+
+  const handleOpenDirectLineContractShare = () => {
+    const text = getLineContractText();
+    const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
+    window.open(lineUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handlePrintContract = () => {
@@ -178,15 +187,28 @@ export const LeaseContractSection: React.FC<LeaseContractSectionProps> = ({
                 <span>เขียน / แก้ไขสัญญาเช่า</span>
               </button>
               
-              <button
-                type="button"
-                id="btn-copy-contract-line"
-                onClick={handleCopyLineSummary}
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-              >
-                {copiedLine ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedLine ? 'คัดลอกแล้ว!' : 'คัดลอกสรุปส่ง LINE'}</span>
-              </button>
+              <div className="flex items-center rounded-xl bg-emerald-950/40 border border-emerald-500/40 p-0.5">
+                <button
+                  type="button"
+                  id="btn-direct-contract-line"
+                  onClick={handleOpenDirectLineContractShare}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+                  title="เปิดแอป LINE เพื่อเลือกแชทส่งสัญญาให้ลูกค้าโดยตรง"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>เปิด LINE</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-copy-contract-line"
+                  onClick={handleCopyLineSummary}
+                  className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-emerald-600/30 text-emerald-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                  title="คัดลอกข้อความสรุปสัญญาไปวางในแชท"
+                >
+                  {copiedLine ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedLine ? 'คัดลอกแล้ว!' : 'คัดลอก'}</span>
+                </button>
+              </div>
 
               <button
                 type="button"
