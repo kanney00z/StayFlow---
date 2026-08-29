@@ -25,6 +25,107 @@ const STORAGE_KEY_SUPABASE_KEY = 'stayflow_supabase_key';
 let cachedClient: SupabaseClient | null = null;
 
 /**
+ * Encode Supabase credentials into a shareable hash string
+ */
+export function encodeSyncToken(url: string, anonKey: string): string {
+  try {
+    const payload = JSON.stringify({ url: url.trim(), key: anonKey.trim() });
+    return btoa(unescape(encodeURIComponent(payload)));
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Decode Supabase credentials from a shareable hash string
+ */
+export function decodeSyncToken(token: string): SupabaseConfig | null {
+  try {
+    const raw = decodeURIComponent(escape(atob(token.trim())));
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.url === 'string' && typeof parsed.key === 'string' && parsed.url.startsWith('https://')) {
+      return { url: parsed.url, anonKey: parsed.key };
+    }
+  } catch {
+    // fallback or fail
+  }
+  return null;
+}
+
+/**
+ * Generate a complete Direct Sync URL that automatically configures any mobile device or browser upon opening
+ */
+export function getMobileSyncUrl(): string {
+  const config = getSupabaseConfig();
+  const baseUrl = window.location.origin + window.location.pathname;
+  if (!config.url || !config.anonKey) {
+    return baseUrl;
+  }
+  const token = encodeSyncToken(config.url, config.anonKey);
+  return `${baseUrl}#sync=${token}`;
+}
+
+/**
+ * Auto-detect and parse Supabase credentials from URL query/hash on page load
+ * Returns true if new credentials were found and applied
+ */
+export function parseAndApplySyncFromUrl(): boolean {
+  try {
+    let urlFound = '';
+    let keyFound = '';
+
+    // 1. Check Hash (#sync=...)
+    const hash = window.location.hash;
+    if (hash && hash.includes('sync=')) {
+      const match = hash.match(/sync=([^&]+)/);
+      if (match && match[1]) {
+        const decoded = decodeSyncToken(match[1]);
+        if (decoded) {
+          urlFound = decoded.url;
+          keyFound = decoded.anonKey;
+        }
+      }
+    }
+
+    // 2. Check Query Params (?sb_url=...&sb_key=... or ?sync=...)
+    if (!urlFound) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('sync')) {
+        const decoded = decodeSyncToken(params.get('sync') || '');
+        if (decoded) {
+          urlFound = decoded.url;
+          keyFound = decoded.anonKey;
+        }
+      } else if (params.get('sb_url') && params.get('sb_key')) {
+        urlFound = params.get('sb_url') || '';
+        keyFound = params.get('sb_key') || '';
+      } else if (params.get('supabase_url') && params.get('supabase_key')) {
+        urlFound = params.get('supabase_url') || '';
+        keyFound = params.get('supabase_key') || '';
+      }
+    }
+
+    if (urlFound && keyFound && urlFound.startsWith('https://')) {
+      saveSupabaseConfig(urlFound, keyFound);
+      
+      // Clean URL address bar without reloading
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+      return true;
+    }
+  } catch (err) {
+    console.warn('Error parsing sync from URL:', err);
+  }
+  return false;
+}
+
+// Auto-run on module evaluation
+if (typeof window !== 'undefined') {
+  parseAndApplySyncFromUrl();
+}
+
+/**
  * Get current Supabase credentials from ENV or localStorage
  */
 export function getSupabaseConfig(): SupabaseConfig {

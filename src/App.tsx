@@ -6,7 +6,9 @@ import { UtilityCalculator } from './components/admin/UtilityCalculator';
 import { BookingTenantList } from './components/admin/BookingTenantList';
 import { AdminSettings } from './components/admin/AdminSettings';
 import { InvoiceModal } from './components/admin/InvoiceModal';
+import { MobileSyncModal } from './components/admin/MobileSyncModal';
 import { ClientBookingView } from './components/client/ClientBookingView';
+import { Smartphone, CheckCircle2, QrCode, Cloud, RefreshCw, X } from 'lucide-react';
 
 import { 
   Room, Tenant, Booking, UtilityRateConfig, 
@@ -32,6 +34,7 @@ import {
   saveBookingsToCloud,
   saveBillsToCloud,
   isSupabaseConfigured,
+  parseAndApplySyncFromUrl,
   CLIENT_SESSION_ID,
   RealtimeSyncPayload
 } from './lib/supabase';
@@ -92,6 +95,33 @@ export default function App() {
   // Active Invoice Modal state
   const [selectedBillForInvoice, setSelectedBillForInvoice] = useState<UtilityBill | null>(null);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [isMobileSyncModalOpen, setIsMobileSyncModalOpen] = useState(false);
+  const [syncToastMessage, setSyncToastMessage] = useState<string | null>(null);
+  const [isFetchingCloud, setIsFetchingCloud] = useState<boolean>(false);
+
+  // Auto-detect Sync from URL on mount
+  useEffect(() => {
+    const applied = parseAndApplySyncFromUrl();
+    if (applied) {
+      setSyncToastMessage('📱 ซิงค์ข้อมูลจากคอมพิวเตอร์สำเร็จ! เชื่อมต่อฐานข้อมูล Cloud เรียบร้อยแล้ว');
+      setTimeout(() => setSyncToastMessage(null), 6000);
+      
+      // Force refresh data from cloud
+      setIsFetchingCloud(true);
+      fetchAllFromSupabase().then((cloudData) => {
+        if (cloudData) {
+          if (cloudData.property) setProperty(cloudData.property);
+          if (cloudData.utilityConfig) setUtilityConfig(cloudData.utilityConfig);
+          if (cloudData.rooms && cloudData.rooms.length > 0) setRooms(cloudData.rooms);
+          if (cloudData.tenants && cloudData.tenants.length > 0) setTenants(cloudData.tenants);
+          if (cloudData.bookings && cloudData.bookings.length > 0) setBookings(cloudData.bookings);
+          if (cloudData.bills && cloudData.bills.length > 0) setBills(cloudData.bills);
+        }
+      }).finally(() => {
+        setIsFetchingCloud(false);
+      });
+    }
+  }, []);
 
   // Sync with LocalStorage
   useEffect(() => {
@@ -582,7 +612,48 @@ export default function App() {
         pendingBillsCount={pendingBillsCount}
         isRealtimeConnected={isRealtimeConnected}
         isSupabaseConfigured={isSupabaseConfigured()}
+        onOpenMobileSync={() => setIsMobileSyncModalOpen(true)}
       />
+
+      {/* Sync Status Toast Alert */}
+      {syncToastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md bg-slate-900 text-white border border-emerald-500/50 p-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5 duration-300">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div className="flex-1 text-xs">
+            <p className="font-bold text-emerald-300">การเชื่อมต่อเรียลไทม์</p>
+            <p className="text-slate-200 mt-0.5">{syncToastMessage}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSyncToastMessage(null)}
+            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Mobile Device Notice Banner if not yet connected to Supabase */}
+      {!isSupabaseConfigured() && currentMode === 'admin' && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>เปิดใช้งานบนมือถือให้ข้อมูลตรงกัน:</strong> สแกน QR Code จากหน้าจอคอมพิวเตอร์ หรือเปิดผ่านลิงก์ที่ส่งจากคอมพิวเตอร์
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsMobileSyncModalOpen(true)}
+            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>ดู QR Code / ลิงก์สำหรับมือถือ</span>
+          </button>
+        </div>
+      )}
 
       {/* Main Container Body */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
@@ -707,6 +778,19 @@ export default function App() {
         onUpdateStatus={handleUpdateBillStatus}
         onUpdateBillPayment={handleUpdateBillPayment}
         onUpdateBillContract={handleUpdateBillContract}
+      />
+
+      {/* Mobile Live Sync & Share Modal */}
+      <MobileSyncModal
+        isOpen={isMobileSyncModalOpen}
+        onClose={() => setIsMobileSyncModalOpen(false)}
+        onOpenSettings={() => setAdminTab('settings')}
+        property={property}
+        utilityConfig={utilityConfig}
+        rooms={rooms}
+        tenants={tenants}
+        bookings={bookings}
+        bills={bills}
       />
 
       {/* Footer */}

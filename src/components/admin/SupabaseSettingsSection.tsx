@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { 
   Database, Cloud, RefreshCw, CheckCircle2, AlertCircle, 
   Copy, ExternalLink, Code2, Shield, Radio, ArrowUpRight,
-  Check, Play, ArrowDownToLine, UploadCloud
+  Check, Play, ArrowDownToLine, UploadCloud, Smartphone, QrCode, Sparkles
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { 
   getSupabaseConfig, saveSupabaseConfig, testSupabaseConnection, 
   isSupabaseConfigured, SUPABASE_SQL_SCHEMA, syncAllToSupabase,
-  fetchAllFromSupabase, getSupabase
+  fetchAllFromSupabase, getSupabase, getMobileSyncUrl
 } from '../../lib/supabase';
 import { PropertyProfile, UtilityRateConfig, Room, Tenant, Booking, UtilityBill } from '../../types';
 
@@ -46,14 +47,28 @@ export const SupabaseSettingsSection: React.FC<SupabaseSettingsSectionProps> = (
   const [isPulling, setIsPulling] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedMobileLink, setCopiedMobileLink] = useState(false);
   const [showSqlCode, setShowSqlCode] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
+  const [mobileSyncUrl, setMobileSyncUrl] = useState<string>('');
 
   useEffect(() => {
     const config = getSupabaseConfig();
     setSupabaseUrl(config.url);
     setSupabaseKey(config.anonKey);
     setIsConnected(isSupabaseConfigured());
+
+    const url = getMobileSyncUrl();
+    setMobileSyncUrl(url);
+
+    if (config.url && config.anonKey) {
+      QRCode.toDataURL(url, {
+        width: 240,
+        margin: 1.5,
+        color: { dark: '#0f172a', light: '#ffffff' }
+      }).then(setQrCodeUrl).catch(console.error);
+    }
   }, []);
 
   const handleTestConnection = async () => {
@@ -64,6 +79,13 @@ export const SupabaseSettingsSection: React.FC<SupabaseSettingsSectionProps> = (
       setTestResult(res);
       if (res.success) {
         setIsConnected(true);
+        const url = getMobileSyncUrl();
+        setMobileSyncUrl(url);
+        QRCode.toDataURL(url, {
+          width: 240,
+          margin: 1.5,
+          color: { dark: '#0f172a', light: '#ffffff' }
+        }).then(setQrCodeUrl).catch(console.error);
       }
     } catch (err: any) {
       setTestResult({ success: false, message: err.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ' });
@@ -82,6 +104,13 @@ export const SupabaseSettingsSection: React.FC<SupabaseSettingsSectionProps> = (
     navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
     setCopiedSql(true);
     setTimeout(() => setCopiedSql(false), 2500);
+  };
+
+  const handleCopyMobileLink = () => {
+    const url = getMobileSyncUrl();
+    navigator.clipboard.writeText(url);
+    setCopiedMobileLink(true);
+    setTimeout(() => setCopiedMobileLink(false), 2500);
   };
 
   const handlePushAllToCloud = async () => {
@@ -166,6 +195,61 @@ export const SupabaseSettingsSection: React.FC<SupabaseSettingsSectionProps> = (
           {copiedSql ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-600" />}
           <span>{copiedSql ? 'คัดลอก SQL แล้ว!' : 'คัดลอก SQL สร้างตาราง'}</span>
         </button>
+      </div>
+
+      {/* Mobile Live Sync Highlight Card */}
+      <div className="bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-2xl p-5 text-white shadow-md">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+          <div className="space-y-2 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 bg-indigo-500 text-white font-bold rounded-md text-[10px] uppercase tracking-wider">
+                แนะนำ
+              </span>
+              <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4 text-indigo-400" />
+                <span>เปิดใช้งานในมือถือ — ข้อมูลตรงกับเครื่องนี้ทันที</span>
+              </h4>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed max-w-xl">
+              สแกน QR Code หรือกดคัดลอกลิงก์ส่งเข้า LINE / แชท เพื่อเปิดใช้งานในมือถือ ระบบจะดึงข้อมูลห้องพัก ผู้เช่า ค่าน้ำค่าไฟ และการจองจาก Cloud มาแสดงผลทันทีโดย<strong>ไม่ต้องพิมพ์ Key หรือตั้งค่าใดๆ อีก</strong>
+            </p>
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={handleCopyMobileLink}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+              >
+                {copiedMobileLink ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedMobileLink ? 'คัดลอกลิงก์สำหรับมือถือแล้ว!' : 'คัดลอกลิงก์สำหรับเปิดในมือถือ'}</span>
+              </button>
+
+              <a
+                href={mobileSyncUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-medium transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>ทดสอบเปิดลิงก์</span>
+              </a>
+            </div>
+          </div>
+
+          {/* QR Code */}
+          <div className="flex flex-col items-center justify-center bg-white p-3 rounded-xl border border-slate-700 shrink-0 self-center md:self-auto">
+            {qrCodeUrl ? (
+              <img src={qrCodeUrl} alt="Mobile Direct Sync QR" className="w-28 h-28 object-contain rounded" />
+            ) : (
+              <div className="w-28 h-28 flex items-center justify-center text-slate-400">
+                <QrCode className="w-10 h-10 animate-pulse text-indigo-500" />
+              </div>
+            )}
+            <span className="text-[10px] font-bold text-slate-700 mt-1 flex items-center gap-1">
+              <QrCode className="w-3 h-3 text-indigo-600" />
+              <span>สแกนด้วยมือถือ</span>
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Connection Inputs */}
