@@ -25,14 +25,31 @@ const STORAGE_KEY_SUPABASE_KEY = 'stayflow_supabase_key';
 let cachedClient: SupabaseClient | null = null;
 
 /**
+ * Get the public URL accessible by any mobile phone/device without authentication barriers
+ */
+export function getPublicBaseUrl(): string {
+  if (typeof window === 'undefined') return '';
+  let origin = window.location.origin;
+  // Replace internal development container prefix with public preview prefix (ais-dev -> ais-pre)
+  if (origin.includes('ais-dev-')) {
+    origin = origin.replace('ais-dev-', 'ais-pre-');
+  }
+  return origin + window.location.pathname;
+}
+
+/**
  * Encode Supabase credentials into a shareable hash string
  */
 export function encodeSyncToken(url: string, anonKey: string): string {
   try {
     const payload = JSON.stringify({ url: url.trim(), key: anonKey.trim() });
-    return btoa(unescape(encodeURIComponent(payload)));
+    return encodeURIComponent(btoa(unescape(encodeURIComponent(payload))));
   } catch {
-    return '';
+    try {
+      return encodeURIComponent(btoa(JSON.stringify({ url: url.trim(), key: anonKey.trim() })));
+    } catch {
+      return '';
+    }
   }
 }
 
@@ -41,13 +58,23 @@ export function encodeSyncToken(url: string, anonKey: string): string {
  */
 export function decodeSyncToken(token: string): SupabaseConfig | null {
   try {
-    const raw = decodeURIComponent(escape(atob(token.trim())));
+    const cleanToken = decodeURIComponent(token.trim());
+    const raw = decodeURIComponent(escape(atob(cleanToken)));
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed.url === 'string' && typeof parsed.key === 'string' && parsed.url.startsWith('https://')) {
       return { url: parsed.url, anonKey: parsed.key };
     }
   } catch {
-    // fallback or fail
+    try {
+      const cleanToken = decodeURIComponent(token.trim());
+      const raw = atob(cleanToken);
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.url === 'string' && typeof parsed.key === 'string') {
+        return { url: parsed.url, anonKey: parsed.key };
+      }
+    } catch {
+      // fallback or fail
+    }
   }
   return null;
 }
@@ -57,7 +84,7 @@ export function decodeSyncToken(token: string): SupabaseConfig | null {
  */
 export function getMobileSyncUrl(): string {
   const config = getSupabaseConfig();
-  const baseUrl = window.location.origin + window.location.pathname;
+  const baseUrl = getPublicBaseUrl();
   if (!config.url || !config.anonKey) {
     return baseUrl;
   }
@@ -70,12 +97,13 @@ export function getMobileSyncUrl(): string {
  * Returns true if new credentials were found and applied
  */
 export function parseAndApplySyncFromUrl(): boolean {
+  if (typeof window === 'undefined') return false;
   try {
     let urlFound = '';
     let keyFound = '';
 
     // 1. Check Hash (#sync=...)
-    const hash = window.location.hash;
+    const hash = window.location.hash || '';
     if (hash && hash.includes('sync=')) {
       const match = hash.match(/sync=([^&]+)/);
       if (match && match[1]) {
@@ -88,7 +116,7 @@ export function parseAndApplySyncFromUrl(): boolean {
     }
 
     // 2. Check Query Params (?sb_url=...&sb_key=... or ?sync=...)
-    if (!urlFound) {
+    if (!urlFound && window.location.search) {
       const params = new URLSearchParams(window.location.search);
       if (params.get('sync')) {
         const decoded = decodeSyncToken(params.get('sync') || '');
@@ -109,8 +137,12 @@ export function parseAndApplySyncFromUrl(): boolean {
       saveSupabaseConfig(urlFound, keyFound);
       
       // Clean URL address bar without reloading
-      if (window.history && window.history.replaceState) {
-        window.history.replaceState(null, '', window.location.pathname);
+      try {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      } catch {
+        // ignore
       }
       return true;
     }

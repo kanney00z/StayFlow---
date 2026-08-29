@@ -1055,15 +1055,15 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
                           <td className="py-3 px-3">
                             <div className="font-mono font-bold text-slate-900">{bill.monthYear}</div>
                             <div className="text-[11px] text-slate-400 font-mono">{bill.billNumber}</div>
-                            <div className="text-[10px] text-slate-400">{bill.issueDate}</div>
+                            <div className="text-[10px] text-slate-400">{bill.billingDate}</div>
                           </td>
 
                           {/* Electricity Meter */}
                           <td className="py-3 px-3 text-center bg-amber-50/20">
                             <div className="font-mono text-xs text-amber-900">
-                              <span className="text-slate-400">{bill.previousElecMeter}</span>
+                              <span className="text-slate-400">{bill.prevElecMeter}</span>
                               <span className="mx-1 text-amber-600">➔</span>
-                              <span className="font-bold">{bill.currentElecMeter}</span>
+                              <span className="font-bold">{bill.currElecMeter}</span>
                             </div>
                             <div className="font-mono font-bold text-amber-700 text-[11px]">
                               {bill.elecUnits} หน่วย ({formatCurrency(bill.elecAmount)})
@@ -1073,9 +1073,9 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
                           {/* Water Meter */}
                           <td className="py-3 px-3 text-center bg-sky-50/20">
                             <div className="font-mono text-xs text-sky-900">
-                              <span className="text-slate-400">{bill.previousWaterMeter}</span>
+                              <span className="text-slate-400">{bill.prevWaterMeter}</span>
                               <span className="mx-1 text-sky-600">➔</span>
-                              <span className="font-bold">{bill.currentWaterMeter}</span>
+                              <span className="font-bold">{bill.currWaterMeter}</span>
                             </div>
                             <div className="font-mono font-bold text-sky-700 text-[11px]">
                               {bill.waterUnits} หน่วย ({formatCurrency(bill.waterAmount)})
@@ -1085,7 +1085,7 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
                           {/* Rent + Common */}
                           <td className="py-3 px-3 text-right">
                             <div className="font-mono font-semibold text-slate-800">
-                              {formatCurrency(bill.roomRate)}
+                              {formatCurrency(bill.roomRentAmount)}
                             </div>
                             <div className="text-[10px] text-slate-500">
                               +ส่วนกลาง {formatCurrency(bill.commonFee + bill.trashFee)}

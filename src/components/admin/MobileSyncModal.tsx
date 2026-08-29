@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Smartphone, QrCode, Copy, Check, ExternalLink, 
-  Sparkles, ShieldCheck, RefreshCw, X, Radio, ArrowRight, Share2
+  Sparkles, ShieldCheck, RefreshCw, X, Radio, ArrowRight, 
+  Share2, Globe, Link2, Send
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { 
-  getMobileSyncUrl, isSupabaseConfigured, getSupabaseConfig, 
+  getMobileSyncUrl, getPublicBaseUrl, isSupabaseConfigured, getSupabaseConfig, 
   syncAllToSupabase 
 } from '../../lib/supabase';
 import { PropertyProfile, UtilityRateConfig, Room, Tenant, Booking, UtilityBill } from '../../types';
@@ -35,7 +36,9 @@ export const MobileSyncModal: React.FC<MobileSyncModalProps> = ({
 }) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [syncUrl, setSyncUrl] = useState<string>('');
-  const [copied, setCopied] = useState<boolean>(false);
+  const [publicUrl, setPublicUrl] = useState<string>('');
+  const [copiedSync, setCopiedSync] = useState<boolean>(false);
+  const [copiedPublic, setCopiedPublic] = useState<boolean>(false);
   const [isPushing, setIsPushing] = useState<boolean>(false);
   const [pushStatus, setPushStatus] = useState<{ success?: boolean; message?: string } | null>(null);
 
@@ -45,11 +48,13 @@ export const MobileSyncModal: React.FC<MobileSyncModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     
-    const url = getMobileSyncUrl();
-    setSyncUrl(url);
+    const fullSyncUrl = getMobileSyncUrl();
+    const cleanPublicUrl = getPublicBaseUrl();
+    setSyncUrl(fullSyncUrl);
+    setPublicUrl(cleanPublicUrl);
 
-    // Generate high quality QR code
-    QRCode.toDataURL(url, {
+    // Generate high quality QR code with direct sync URL
+    QRCode.toDataURL(fullSyncUrl, {
       width: 320,
       margin: 1.5,
       color: {
@@ -68,11 +73,18 @@ export const MobileSyncModal: React.FC<MobileSyncModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleCopyLink = () => {
+  const handleCopySyncLink = () => {
     if (!syncUrl) return;
     navigator.clipboard.writeText(syncUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+    setCopiedSync(true);
+    setTimeout(() => setCopiedSync(false), 2500);
+  };
+
+  const handleCopyPublicLink = () => {
+    if (!publicUrl) return;
+    navigator.clipboard.writeText(publicUrl);
+    setCopiedPublic(true);
+    setTimeout(() => setCopiedPublic(false), 2500);
   };
 
   const handleQuickUpload = async () => {
@@ -106,10 +118,10 @@ export const MobileSyncModal: React.FC<MobileSyncModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                เปิดใช้งานในมือถือ (ข้อมูลตรงกันทันที)
+                ลิงก์สำหรับเปิดใช้งานบนมือถือ
               </h3>
               <p className="text-xs text-slate-400">
-                สแกนหรือแชร์ลิงก์นี้เพื่อใช้งานบนมือถือโดยไม่ต้องตั้งค่าใหม่
+                คัดลอกลิงก์ส่งเข้า LINE หรือแชทเพื่อเปิดใช้งานบนมือถือได้ทันที
               </p>
             </div>
           </div>
@@ -125,6 +137,7 @@ export const MobileSyncModal: React.FC<MobileSyncModalProps> = ({
 
         {/* Content */}
         <div className="p-6 space-y-5">
+          {/* Supabase Status Banner */}
           {!isConfigured ? (
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-amber-300 text-xs space-y-2.5">
               <div className="flex items-start gap-2.5">
@@ -132,7 +145,7 @@ export const MobileSyncModal: React.FC<MobileSyncModalProps> = ({
                 <div>
                   <p className="font-semibold text-amber-200">ยังไม่ได้เชื่อมต่อ Supabase Database</p>
                   <p className="text-amber-300/80 mt-0.5 leading-relaxed">
-                    เพื่อให้ข้อมูลบนมือถือและคอมพิวเตอร์อัปเดตตรงกันแบบ Real-Time ตลอดเวลา กรุณาเชื่อมต่อ Supabase URL และ Key ก่อน
+                    เพื่อให้ข้อมูลบนมือถือและคอมพิวเตอร์อัปเดตตรงกันตลอดเวลา กรุณาเชื่อมต่อ Supabase URL และ Key ก่อน
                   </p>
                 </div>
               </div>
@@ -155,8 +168,8 @@ export const MobileSyncModal: React.FC<MobileSyncModalProps> = ({
               <div className="flex items-center gap-2.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 <div>
-                  <p className="text-xs font-bold text-emerald-300">ระบบเชื่อมต่อ Cloud พร้อมใช้งานแล้ว</p>
-                  <p className="text-[11px] text-emerald-400/80">ฐานข้อมูลพร้อมซิงค์ข้อมูลตรงกับมือถือทุกเครื่อง</p>
+                  <p className="text-xs font-bold text-emerald-300">ฐานข้อมูล Cloud พร้อมเชื่อมต่อกับมือถือ</p>
+                  <p className="text-[11px] text-emerald-400/80">ข้อมูลจะซิงค์ตรงกันทันทีที่เปิดลิงก์</p>
                 </div>
               </div>
               <button
@@ -181,68 +194,104 @@ export const MobileSyncModal: React.FC<MobileSyncModalProps> = ({
             </div>
           )}
 
-          {/* QR Code Container */}
-          <div className="flex flex-col items-center justify-center p-5 bg-white rounded-2xl shadow-inner border border-slate-700">
-            {qrDataUrl ? (
-              <img
-                src={qrDataUrl}
-                alt="Mobile Sync QR Code"
-                className="w-52 h-52 object-contain rounded-lg"
+          {/* Direct Sync Web Link Box (Primary Choice) */}
+          <div className="bg-slate-800/80 border border-indigo-500/40 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                <Link2 className="w-4 h-4 text-indigo-400" />
+                <span>ลิงก์เว็บตรงสำหรับมือถือ (เชื่อมต่อ Cloud ทันที)</span>
+              </span>
+              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded font-medium border border-indigo-500/30">
+                แนะนำ
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                id="input-sync-url"
+                type="text"
+                readOnly
+                value={syncUrl}
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 font-mono select-all focus:outline-none focus:border-indigo-500"
               />
-            ) : (
-              <div className="w-52 h-52 bg-slate-100 flex items-center justify-center text-slate-400">
-                <RefreshCw className="w-8 h-8 animate-spin text-indigo-500" />
-              </div>
-            )}
-            <p className="text-[12px] font-semibold text-slate-800 mt-2 flex items-center gap-1.5">
-              <QrCode className="w-4 h-4 text-indigo-600" />
-              <span>ใช้กล้องมือถือสแกนเพื่อเปิดเว็บ</span>
+              <button
+                id="btn-copy-sync-link"
+                type="button"
+                onClick={handleCopySyncLink}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors shrink-0 shadow cursor-pointer"
+              >
+                {copiedSync ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>คัดลอกแล้ว!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>คัดลอกลิงก์</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              💡 คัดลอกลิงก์นี้ส่งเข้า <strong>LINE</strong> หรือแชทตนเอง แล้วแตะเปิดบนมือถือได้เลย ไม่ต้องกรอกอะไรเพิ่ม
             </p>
           </div>
 
-          {/* Step by step guide */}
-          <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3.5 space-y-2 text-xs text-slate-300">
-            <p className="font-bold text-white text-xs flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>วิธีใช้งานบนมือถือโดยไม่ต้องทำอะไรเพิ่ม:</span>
-            </p>
-            <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-300 pl-1 leading-relaxed">
-              <li>ใช้กล้องมือถือสแกน <b>QR Code</b> ด้านบน หรือกดคัดลอกลิงก์ส่งเข้า LINE</li>
-              <li>เมื่อแตะเปิดลิงก์ในมือถือ ระบบจะเชื่อมต่อกับฐานข้อมูล Cloud ของคุณทันที</li>
-              <li>ข้อมูลห้องพัก ผู้เช่า ค่าน้ำค่าไฟ และการจองจะตรงกับบนคอมพิวเตอร์ 100%</li>
-            </ol>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="space-y-2 pt-1">
-            <button
-              id="btn-copy-mobile-sync-link"
-              type="button"
-              onClick={handleCopyLink}
-              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/50 transition-all cursor-pointer"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-300" />
-                  <span>คัดลอกลิงก์เรียบร้อยแล้ว! (นำไปวางใน LINE หรือแชทได้เลย)</span>
-                </>
+          {/* QR Code & Clean Public Link Accordion */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* QR Code Box */}
+            <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-3.5 flex flex-col items-center justify-center text-center">
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt="Mobile Sync QR Code"
+                  className="w-32 h-32 object-contain rounded bg-white p-1 shadow"
+                />
               ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  <span>คัดลอกลิงก์สำหรับเปิดในมือถือ (พร้อมระบบซิงค์อัตโนมัติ)</span>
-                </>
+                <div className="w-32 h-32 bg-slate-800 rounded flex items-center justify-center text-slate-400">
+                  <RefreshCw className="w-6 h-6 animate-spin text-indigo-500" />
+                </div>
               )}
-            </button>
+              <p className="text-[11px] font-semibold text-slate-300 mt-2 flex items-center gap-1">
+                <QrCode className="w-3.5 h-3.5 text-indigo-400" />
+                <span>หรือสแกนด้วยกล้องมือถือ</span>
+              </p>
+            </div>
 
-            <a
-              href={syncUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-medium rounded-xl text-xs flex items-center justify-center gap-2 transition-colors"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>ทดลองเปิดในแท็บใหม่</span>
-            </a>
+            {/* Clean URL / Test Button */}
+            <div className="bg-slate-800/40 border border-slate-700/60 rounded-xl p-3.5 flex flex-col justify-between space-y-2.5">
+              <div>
+                <p className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-slate-400" />
+                  <span>ลิงก์หน้าเว็บหลัก (Public URL)</span>
+                </p>
+                <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                  สามารถเปิดใช้งานผ่านเบราว์เซอร์บนมือถือได้ทุกเครื่อง
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={handleCopyPublicLink}
+                  className="w-full py-1.5 px-2.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  {copiedPublic ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedPublic ? 'คัดลอก Public URL แล้ว' : 'คัดลอก Public URL'}</span>
+                </button>
+
+                <a
+                  href={syncUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-1.5 px-2.5 bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-500/30 text-indigo-300 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>ทดลองเปิดในแท็บใหม่</span>
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -877,21 +877,26 @@ export const BookingTenantList: React.FC<BookingTenantListProps> = ({
 
               <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
                 {(() => {
-                  const roomForT = rooms.find(r => r.id === tenantForContract.roomId || r.number === tenantForContract.roomNumber) || {
+                  const roomForT: Room = rooms.find(r => r.id === tenantForContract.roomId || r.number === tenantForContract.roomNumber) || {
                     id: tenantForContract.roomId,
                     number: tenantForContract.roomNumber,
                     floor: parseInt(tenantForContract.roomNumber[0]) || 1,
-                    type: 'ห้องพักมาตรฐาน',
+                    type: 'Standard',
                     dailyRate: 650,
                     monthlyRate: tenantForContract.monthlyRent,
-                    depositDaily: 500,
                     depositMonthly: tenantForContract.depositAmount,
+                    sizeSqm: 28,
+                    bedType: 'เตียงคู่ (King Bed)',
+                    maxGuests: 2,
+                    description: 'ห้องพักมาตรฐาน',
                     status: 'occupied',
                     building: property?.name || 'หอพัก',
                     images: [],
                     amenities: [],
-                    waterMeter: 0,
-                    electricityMeter: 0,
+                    previousWaterMeter: 0,
+                    currentWaterMeter: 0,
+                    previousElecMeter: 0,
+                    currentElecMeter: 0,
                   };
 
                   const defaultProperty: PropertyProfile = property || {
