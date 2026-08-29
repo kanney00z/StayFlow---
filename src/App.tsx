@@ -24,6 +24,8 @@ import {
   INITIAL_BILLS,
 } from './data/initialData';
 
+import { safeStorage } from './lib/storage';
+
 import {
   getSupabase,
   broadcastRealtimeChange,
@@ -50,20 +52,16 @@ export default function App() {
 
   // Application Persistent / Memory States
   const [property, setProperty] = useState<PropertyProfile>(() => {
-    const saved = localStorage.getItem('stayflow_property');
-    return saved ? JSON.parse(saved) : INITIAL_PROPERTY_PROFILE;
+    return safeStorage.getItem('stayflow_property', INITIAL_PROPERTY_PROFILE);
   });
 
   const [utilityConfig, setUtilityConfig] = useState<UtilityRateConfig>(() => {
-    const saved = localStorage.getItem('stayflow_utility_config');
-    return saved ? JSON.parse(saved) : INITIAL_UTILITY_CONFIG;
+    return safeStorage.getItem('stayflow_utility_config', INITIAL_UTILITY_CONFIG);
   });
 
   const [rooms, setRooms] = useState<Room[]>(() => {
     try {
-      const saved = localStorage.getItem('stayflow_rooms');
-      if (!saved) return INITIAL_ROOMS;
-      const parsed: Room[] = JSON.parse(saved);
+      const parsed: Room[] = safeStorage.getItem('stayflow_rooms', INITIAL_ROOMS);
       if (!Array.isArray(parsed)) return INITIAL_ROOMS;
       return parsed.map((r) => ({
         ...r,
@@ -78,18 +76,15 @@ export default function App() {
   });
 
   const [tenants, setTenants] = useState<Tenant[]>(() => {
-    const saved = localStorage.getItem('stayflow_tenants');
-    return saved ? JSON.parse(saved) : INITIAL_TENANTS;
+    return safeStorage.getItem('stayflow_tenants', INITIAL_TENANTS);
   });
 
   const [bookings, setBookings] = useState<Booking[]>(() => {
-    const saved = localStorage.getItem('stayflow_bookings');
-    return saved ? JSON.parse(saved) : INITIAL_BOOKINGS;
+    return safeStorage.getItem('stayflow_bookings', INITIAL_BOOKINGS);
   });
 
   const [bills, setBills] = useState<UtilityBill[]>(() => {
-    const saved = localStorage.getItem('stayflow_bills');
-    return saved ? JSON.parse(saved) : INITIAL_BILLS;
+    return safeStorage.getItem('stayflow_bills', INITIAL_BILLS);
   });
 
   // Active Invoice Modal state
@@ -123,29 +118,29 @@ export default function App() {
     }
   }, []);
 
-  // Sync with LocalStorage
+  // Sync with LocalStorage (Using safeStorage to avoid QuotaExceededError crashes on mobile browsers)
   useEffect(() => {
-    localStorage.setItem('stayflow_property', JSON.stringify(property));
+    safeStorage.setItem('stayflow_property', property);
   }, [property]);
 
   useEffect(() => {
-    localStorage.setItem('stayflow_utility_config', JSON.stringify(utilityConfig));
+    safeStorage.setItem('stayflow_utility_config', utilityConfig);
   }, [utilityConfig]);
 
   useEffect(() => {
-    localStorage.setItem('stayflow_rooms', JSON.stringify(rooms));
+    safeStorage.setItem('stayflow_rooms', rooms);
   }, [rooms]);
 
   useEffect(() => {
-    localStorage.setItem('stayflow_tenants', JSON.stringify(tenants));
+    safeStorage.setItem('stayflow_tenants', tenants);
   }, [tenants]);
 
   useEffect(() => {
-    localStorage.setItem('stayflow_bookings', JSON.stringify(bookings));
+    safeStorage.setItem('stayflow_bookings', bookings);
   }, [bookings]);
 
   useEffect(() => {
-    localStorage.setItem('stayflow_bills', JSON.stringify(bills));
+    safeStorage.setItem('stayflow_bills', bills);
   }, [bills]);
 
   // Real-time Initialization and Cloud Hydration

@@ -70,31 +70,40 @@ export const RoomImageManager: React.FC<RoomImageManagerProps> = ({
     const filesToProcess = Array.from(files).slice(0, remainingSlots);
     const newImages: string[] = [];
 
-    let processedCount = 0;
-    filesToProcess.forEach((file) => {
-      if (!file.type.startsWith('image/')) {
-        processedCount++;
-        return;
-      }
+    // Helper to compress image to lightweight base64
+    const compressImage = (file: File): Promise<string> => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 1000;
+            const scaleSize = MAX_WIDTH / img.width;
+            if (scaleSize < 1) {
+              canvas.width = MAX_WIDTH;
+              canvas.height = img.height * scaleSize;
+            } else {
+              canvas.width = img.width;
+              canvas.height = img.height;
+            }
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.72));
+          };
+          img.onerror = () => resolve(e.target?.result as string || '');
+          img.src = e.target?.result as string;
+        };
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+      });
+    };
 
-      // Check file size (limit to ~4MB to keep localStorage healthy)
-      if (file.size > 4 * 1024 * 1024) {
-        alert(`ไฟล์ "${file.name}" มีขนาดใหญ่เกิน 4MB`);
-        processedCount++;
-        return;
+    Promise.all(filesToProcess.map(file => compressImage(file))).then((results) => {
+      const validImages = results.filter(Boolean);
+      if (validImages.length > 0) {
+        onChangeImages([...images, ...validImages]);
       }
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (e.target?.result) {
-          newImages.push(e.target.result as string);
-        }
-        processedCount++;
-        if (processedCount === filesToProcess.length) {
-          onChangeImages([...images, ...newImages]);
-        }
-      };
-      reader.readAsDataURL(file);
     });
 
     if (fileInputRef.current) {

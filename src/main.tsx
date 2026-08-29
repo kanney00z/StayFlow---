@@ -35,14 +35,27 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
             <p className="text-xs text-slate-300">
               {this.state.error?.message || 'พบข้อผิดพลาดชั่วคราวในการแสดงผล กรุณากดปุ่มด้านล่างเพื่อเริ่มระบบใหม่'}
             </p>
-            <button
-              onClick={() => {
-                window.location.href = window.location.origin + window.location.pathname;
-              }}
-              className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer"
-            >
-              โหลดหน้าเว็บใหม่อีกครั้ง
-            </button>
+            <div className="space-y-2 pt-2">
+              <button
+                onClick={() => {
+                  window.location.href = window.location.origin + window.location.pathname;
+                }}
+                className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm transition-colors cursor-pointer"
+              >
+                โหลดหน้าเว็บใหม่อีกครั้ง
+              </button>
+              <button
+                onClick={() => {
+                  try {
+                    window.localStorage.clear();
+                  } catch {}
+                  window.location.href = window.location.origin + window.location.pathname;
+                }}
+                className="w-full py-2 px-4 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                ล้างแคชในเครื่องและโหลดใหม่
+              </button>
+            </div>
           </div>
         </div>
       );

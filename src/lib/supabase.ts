@@ -164,8 +164,16 @@ export function getSupabaseConfig(): SupabaseConfig {
   const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
   const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
-  const storedUrl = localStorage.getItem(STORAGE_KEY_SUPABASE_URL) || '';
-  const storedKey = localStorage.getItem(STORAGE_KEY_SUPABASE_KEY) || '';
+  let storedUrl = '';
+  let storedKey = '';
+  try {
+    if (typeof window !== 'undefined') {
+      storedUrl = window.localStorage.getItem(STORAGE_KEY_SUPABASE_URL) || '';
+      storedKey = window.localStorage.getItem(STORAGE_KEY_SUPABASE_KEY) || '';
+    }
+  } catch {
+    // Ignore storage errors on private mode
+  }
 
   return {
     url: storedUrl || envUrl,
@@ -177,8 +185,14 @@ export function getSupabaseConfig(): SupabaseConfig {
  * Save Supabase credentials to localStorage and reset client
  */
 export function saveSupabaseConfig(url: string, anonKey: string): void {
-  localStorage.setItem(STORAGE_KEY_SUPABASE_URL, url.trim());
-  localStorage.setItem(STORAGE_KEY_SUPABASE_KEY, anonKey.trim());
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_KEY_SUPABASE_URL, url.trim());
+      window.localStorage.setItem(STORAGE_KEY_SUPABASE_KEY, anonKey.trim());
+    }
+  } catch (e) {
+    console.warn('[Supabase] Failed to save config to localStorage:', e);
+  }
   cachedClient = null;
 }
 
