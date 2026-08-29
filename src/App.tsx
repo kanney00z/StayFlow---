@@ -26,6 +26,11 @@ import {
   getSupabase,
   broadcastRealtimeChange,
   fetchAllFromSupabase,
+  syncAllToSupabase,
+  saveTenantsToCloud,
+  saveRoomsToCloud,
+  saveBookingsToCloud,
+  saveBillsToCloud,
   isSupabaseConfigured,
   CLIENT_SESSION_ID,
   RealtimeSyncPayload
@@ -120,12 +125,20 @@ export default function App() {
       isInitialCloudFetched.current = true;
       fetchAllFromSupabase().then((cloudData) => {
         if (cloudData) {
-          if (cloudData.property) setProperty(cloudData.property);
-          if (cloudData.utilityConfig) setUtilityConfig(cloudData.utilityConfig);
-          if (cloudData.rooms && cloudData.rooms.length > 0) setRooms(cloudData.rooms);
-          if (cloudData.tenants && cloudData.tenants.length > 0) setTenants(cloudData.tenants);
-          if (cloudData.bookings && cloudData.bookings.length > 0) setBookings(cloudData.bookings);
-          if (cloudData.bills && cloudData.bills.length > 0) setBills(cloudData.bills);
+          const hasRooms = Array.isArray(cloudData.rooms) && cloudData.rooms.length > 0;
+          const hasTenants = Array.isArray(cloudData.tenants) && cloudData.tenants.length > 0;
+          
+          if (hasRooms || hasTenants) {
+            if (cloudData.property) setProperty(cloudData.property);
+            if (cloudData.utilityConfig) setUtilityConfig(cloudData.utilityConfig);
+            if (hasRooms) setRooms(cloudData.rooms);
+            if (hasTenants) setTenants(cloudData.tenants);
+            if (cloudData.bookings && cloudData.bookings.length > 0) setBookings(cloudData.bookings);
+            if (cloudData.bills && cloudData.bills.length > 0) setBills(cloudData.bills);
+          } else {
+            // If tables in cloud are newly created and empty, automatically push local data up to Supabase!
+            syncAllToSupabase({ property, utilityConfig, rooms, tenants, bookings, bills });
+          }
         }
       }).catch(err => {
         console.warn('Initial cloud sync check:', err);
@@ -193,6 +206,7 @@ export default function App() {
     setRooms(prev => {
       const updated = prev.map(r => r.id === roomId ? { ...r, status: newStatus } : r);
       notifyRealtimeChange('ROOMS_UPDATE', updated);
+      saveRoomsToCloud(updated);
       return updated;
     });
   };
@@ -201,6 +215,7 @@ export default function App() {
     setRooms(prev => {
       const updated = prev.map(r => r.id === updatedRoom.id ? updatedRoom : r);
       notifyRealtimeChange('ROOMS_UPDATE', updated);
+      saveRoomsToCloud(updated);
       return updated;
     });
   };
@@ -209,6 +224,7 @@ export default function App() {
     setRooms(prev => {
       const updated = [newRoom, ...prev];
       notifyRealtimeChange('ROOMS_UPDATE', updated);
+      saveRoomsToCloud(updated);
       return updated;
     });
   };
@@ -217,16 +233,19 @@ export default function App() {
     setRooms(prev => {
       const updatedRooms = prev.filter(r => r.id !== roomId);
       notifyRealtimeChange('ROOMS_UPDATE', updatedRooms);
+      saveRoomsToCloud(updatedRooms);
       return updatedRooms;
     });
     setTenants(prev => {
       const updatedTenants = prev.filter(t => t.roomId !== roomId);
       notifyRealtimeChange('TENANTS_UPDATE', updatedTenants);
+      saveTenantsToCloud(updatedTenants);
       return updatedTenants;
     });
     setBills(prev => {
       const updatedBills = prev.filter(b => b.roomId !== roomId);
       notifyRealtimeChange('BILLS_UPDATE', updatedBills);
+      saveBillsToCloud(updatedBills);
       return updatedBills;
     });
   };
@@ -248,6 +267,7 @@ export default function App() {
         return r;
       });
       notifyRealtimeChange('ROOMS_UPDATE', updated);
+      saveRoomsToCloud(updated);
       return updated;
     });
   };
@@ -264,6 +284,7 @@ export default function App() {
         updated = [newBill, ...prev];
       }
       notifyRealtimeChange('BILLS_UPDATE', updated);
+      saveBillsToCloud(updated);
       return updated;
     });
   };
@@ -272,6 +293,7 @@ export default function App() {
     setBills(prev => {
       const updated = prev.filter(b => b.id !== billId);
       notifyRealtimeChange('BILLS_UPDATE', updated);
+      saveBillsToCloud(updated);
       return updated;
     });
   };
@@ -279,6 +301,7 @@ export default function App() {
   const handleClearBills = () => {
     setBills([]);
     notifyRealtimeChange('BILLS_UPDATE', []);
+    saveBillsToCloud([]);
   };
 
   const handleResetMeters = () => {
@@ -291,6 +314,7 @@ export default function App() {
         currentElecMeter: 0,
       }));
       notifyRealtimeChange('ROOMS_UPDATE', updated);
+      saveRoomsToCloud(updated);
       return updated;
     });
   };
@@ -310,6 +334,14 @@ export default function App() {
       bookings: INITIAL_BOOKINGS,
       bills: INITIAL_BILLS,
     });
+    syncAllToSupabase({
+      property: INITIAL_PROPERTY_PROFILE,
+      utilityConfig: INITIAL_UTILITY_CONFIG,
+      rooms: INITIAL_ROOMS,
+      tenants: INITIAL_TENANTS,
+      bookings: INITIAL_BOOKINGS,
+      bills: INITIAL_BILLS,
+    });
   };
 
   const handleUpdateBillStatus = (billId: string, status: 'paid' | 'unpaid' | 'partial') => {
@@ -322,6 +354,7 @@ export default function App() {
         paidDate: status === 'paid' ? new Date().toISOString().replace('T', ' ').slice(0, 16) : undefined 
       } : b);
       notifyRealtimeChange('BILLS_UPDATE', updated);
+      saveBillsToCloud(updated);
       return updated;
     });
 
@@ -358,6 +391,7 @@ export default function App() {
         };
       });
       notifyRealtimeChange('BILLS_UPDATE', updated);
+      saveBillsToCloud(updated);
       return updated;
     });
 
@@ -376,6 +410,7 @@ export default function App() {
         };
       });
       notifyRealtimeChange('BILLS_UPDATE', updated);
+      saveBillsToCloud(updated);
       return updated;
     });
 
@@ -394,6 +429,7 @@ export default function App() {
     setBookings(prev => {
       const updatedBookings = [newBooking, ...prev];
       notifyRealtimeChange('BOOKINGS_UPDATE', updatedBookings);
+      saveBookingsToCloud(updatedBookings);
       return updatedBookings;
     });
     
@@ -419,6 +455,7 @@ export default function App() {
       setTenants(prev => {
         const updatedTenants = [newTenant, ...prev];
         notifyRealtimeChange('TENANTS_UPDATE', updatedTenants);
+        saveTenantsToCloud(updatedTenants);
         return updatedTenants;
       });
       handleUpdateRoomStatus(newBooking.roomId, 'occupied');
@@ -436,6 +473,7 @@ export default function App() {
           }
         } : r);
         notifyRealtimeChange('ROOMS_UPDATE', updated);
+        saveRoomsToCloud(updated);
         return updated;
       });
     } else {
@@ -448,6 +486,7 @@ export default function App() {
     setBookings(prev => {
       const updated = prev.filter(b => b.id !== bookingId);
       notifyRealtimeChange('BOOKINGS_UPDATE', updated);
+      saveBookingsToCloud(updated);
       return updated;
     });
   };
@@ -461,6 +500,7 @@ export default function App() {
         updated = prev.filter(b => b.paymentStatus === 'pending');
       }
       notifyRealtimeChange('BOOKINGS_UPDATE', updated);
+      saveBookingsToCloud(updated);
       return updated;
     });
   };
@@ -469,6 +509,7 @@ export default function App() {
     setTenants(prev => {
       const updated = prev.filter(t => t.id !== tenantId);
       notifyRealtimeChange('TENANTS_UPDATE', updated);
+      saveTenantsToCloud(updated);
       return updated;
     });
     setRooms(prev => {
@@ -478,6 +519,7 @@ export default function App() {
         currentTenant: undefined,
       } : r);
       notifyRealtimeChange('ROOMS_UPDATE', updated);
+      saveRoomsToCloud(updated);
       return updated;
     });
   };
@@ -486,6 +528,7 @@ export default function App() {
     setTenants(prev => {
       const updated = prev.filter(t => t.id !== tenantId);
       notifyRealtimeChange('TENANTS_UPDATE', updated);
+      saveTenantsToCloud(updated);
       return updated;
     });
     setRooms(prev => {
@@ -495,6 +538,7 @@ export default function App() {
         currentTenant: undefined,
       } : r);
       notifyRealtimeChange('ROOMS_UPDATE', updated);
+      saveRoomsToCloud(updated);
       return updated;
     });
   };
@@ -503,6 +547,7 @@ export default function App() {
     setBookings(prev => {
       const updated = prev.map(b => b.id === bookingId ? { ...b, paymentStatus: status } : b);
       notifyRealtimeChange('BOOKINGS_UPDATE', updated);
+      saveBookingsToCloud(updated);
       return updated;
     });
   };

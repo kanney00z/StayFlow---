@@ -302,33 +302,45 @@ CREATE TABLE IF NOT EXISTS public.utility_bills (
 );
 
 -- ==========================================
--- 🔐 เปิดใช้งาน Row Level Security (RLS) แบบ Public Anon Access
--- เพื่อให้ Web App สามารถอ่าน/เขียนข้อมูลได้ทันที
+-- 🔐 ปรับสิทธิ์ RLS ให้เข้าถึงได้โดยตรง (Disable RLS เพื่อความเสถียรสูงสุดสำหรับ Anon Key)
 -- ==========================================
-ALTER TABLE public.property_profile ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.utility_config ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.utility_bills ENABLE ROW LEVEL SECURITY;
-
--- สร้าง Policy ให้อนุญาตทุกคนที่ถือ Anon Key อ่าน/เขียนได้
-CREATE POLICY "Allow anon read/write property_profile" ON public.property_profile FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow anon read/write utility_config" ON public.utility_config FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow anon read/write rooms" ON public.rooms FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow anon read/write tenants" ON public.tenants FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow anon read/write bookings" ON public.bookings FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow anon read/write utility_bills" ON public.utility_bills FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE public.property_profile DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.utility_config DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rooms DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tenants DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bookings DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.utility_bills DISABLE ROW LEVEL SECURITY;
 
 -- ==========================================
 -- ⚡ เปิดใช้งาน Real-Time Replication สำหรับทุกตาราง
 -- ==========================================
-ALTER PUBLICATION supabase_realtime ADD TABLE public.property_profile;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.utility_config;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.rooms;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.tenants;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.bookings;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.utility_bills;
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.property_profile;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.utility_config;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.rooms;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.tenants;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.bookings;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.utility_bills;
+  EXCEPTION WHEN others THEN NULL;
+  END;
+END $$;
 `;
 
 /**
@@ -526,6 +538,146 @@ export async function fetchAllFromSupabase(): Promise<{
 }
 
 /**
+ * Auto-save individual entities to Supabase
+ */
+export async function saveTenantsToCloud(tenants: Tenant[]) {
+  const supabase = getSupabase();
+  if (!supabase || tenants.length === 0) return;
+  try {
+    const payloads = tenants.map(t => ({
+      id: t.id,
+      name: t.name,
+      phone: t.phone,
+      email: t.email || '',
+      id_card: t.idCard,
+      room_number: t.roomNumber,
+      room_id: t.roomId,
+      rental_type: t.rentalType || 'monthly',
+      start_date: t.startDate,
+      end_date: t.endDate || null,
+      deposit_amount: t.depositAmount || 0,
+      monthly_rent: t.monthlyRent || 0,
+      emergency_contact: t.emergencyContact || '',
+      emergency_phone: t.emergencyPhone || '',
+      status: t.status || 'active',
+    }));
+    await supabase.from('tenants').upsert(payloads);
+  } catch (err) {
+    console.warn('Error saving tenants to Supabase:', err);
+  }
+}
+
+export async function saveRoomsToCloud(rooms: Room[]) {
+  const supabase = getSupabase();
+  if (!supabase || rooms.length === 0) return;
+  try {
+    const payloads = rooms.map(r => ({
+      id: r.id,
+      number: r.number,
+      floor: r.floor,
+      type: r.type,
+      rental_type: 'monthly',
+      status: r.status,
+      daily_rate: r.dailyRate,
+      monthly_rate: r.monthlyRate,
+      deposit_monthly: r.depositMonthly,
+      current_water_meter: r.currentWaterMeter,
+      previous_water_meter: r.previousWaterMeter,
+      current_elec_meter: r.currentElecMeter,
+      previous_elec_meter: r.previousElecMeter,
+      meter_last_updated: r.meterLastUpdated,
+      images: r.images,
+      amenities: r.amenities,
+      current_tenant: r.currentTenant || null,
+      updated_at: new Date().toISOString(),
+    }));
+    await supabase.from('rooms').upsert(payloads);
+  } catch (err) {
+    console.warn('Error saving rooms to Supabase:', err);
+  }
+}
+
+export async function saveBookingsToCloud(bookings: Booking[]) {
+  const supabase = getSupabase();
+  if (!supabase || bookings.length === 0) return;
+  try {
+    const payloads = bookings.map(b => ({
+      id: b.id,
+      booking_code: b.bookingCode,
+      room_id: b.roomId,
+      room_number: b.roomNumber,
+      room_type: b.roomType,
+      guest_name: b.guestName,
+      phone: b.phone,
+      email: b.email,
+      rental_type: b.rentalType,
+      check_in_date: b.checkInDate,
+      check_out_date: b.checkOutDate,
+      duration_days: b.durationUnits || 1,
+      duration_months: b.durationUnits || 1,
+      room_rate_total: b.roomRateTotal,
+      deposit: b.deposit,
+      total_amount: b.totalAmount,
+      payment_status: b.paymentStatus,
+      payment_method: b.paymentMethod,
+      booking_date: b.createdAt ? b.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+      note: b.specialRequests || '',
+    }));
+    await supabase.from('bookings').upsert(payloads);
+  } catch (err) {
+    console.warn('Error saving bookings to Supabase:', err);
+  }
+}
+
+export async function saveBillsToCloud(bills: UtilityBill[]) {
+  const supabase = getSupabase();
+  if (!supabase || bills.length === 0) return;
+  try {
+    const payloads = bills.map(b => ({
+      id: b.id,
+      bill_number: b.billNumber,
+      room_id: b.roomId,
+      room_number: b.roomNumber,
+      tenant_name: b.tenantName,
+      tenant_phone: b.tenantPhone,
+      month_year: b.monthYear,
+      billing_date: b.billingDate,
+      due_date: b.dueDate,
+      room_rent_amount: b.roomRentAmount,
+      prev_water_meter: b.prevWaterMeter,
+      curr_water_meter: b.currWaterMeter,
+      water_units: b.waterUnits,
+      water_rate: b.waterRate,
+      water_amount: b.waterAmount,
+      prev_elec_meter: b.prevElecMeter,
+      curr_elec_meter: b.currElecMeter,
+      elec_units: b.elecUnits,
+      elec_rate: b.elecRate,
+      elec_amount: b.elecAmount,
+      common_fee: b.commonFee,
+      internet_fee: b.internetFee,
+      parking_fee: b.parkingFee,
+      trash_fee: b.trashFee,
+      other_fees: b.otherFees,
+      other_fees_note: b.otherFeesNote,
+      subtotal: b.subtotal,
+      discount: b.discount,
+      grand_total: b.grandTotal,
+      payment_status: b.paymentStatus,
+      paid_amount: b.paidAmount,
+      remaining_balance: b.remainingBalance,
+      paid_date: b.paidDate,
+      paid_method: b.paidMethod,
+      slip_image: b.slipImage,
+      attached_contract: b.attachedContract,
+    }));
+    await supabase.from('utility_bills').upsert(payloads);
+  } catch (err) {
+    console.warn('Error saving bills to Supabase:', err);
+  }
+}
+
+/**
  * Upload all current application data to Supabase
  */
 export async function syncAllToSupabase(data: {
@@ -535,185 +687,217 @@ export async function syncAllToSupabase(data: {
   tenants: Tenant[];
   bookings: Booking[];
   bills: UtilityBill[];
-}): Promise<{ success: boolean; message: string }> {
+}): Promise<{ success: boolean; message: string; details?: { rooms: number; tenants: number; bookings: number; bills: number } }> {
   const supabase = getSupabase();
   if (!supabase) {
     return { success: false, message: 'ยังไม่ได้ระบุ Supabase URL หรือ Anon Key' };
   }
 
+  let savedRooms = 0;
+  let savedTenants = 0;
+  let savedBookings = 0;
+  let savedBills = 0;
+  const errors: string[] = [];
+
   try {
-    // 1. Property
-    await supabase.from('property_profile').upsert({
-      id: 'main_property',
-      name: data.property.name,
-      name_en: data.property.nameEn,
-      tagline: data.property.tagline,
-      address: data.property.address,
-      phone: data.property.phone,
-      email: data.property.email,
-      tax_id: data.property.taxId,
-      bank_name: data.property.bankName,
-      bank_account: data.property.bankAccount,
-      bank_account_name: data.property.bankAccountName,
-      prompt_pay_id: data.property.promptPayId,
-      prompt_pay_name: data.property.promptPayName,
-      line_id: data.property.lineId,
-      wifi_ssid: data.property.wifiSsid,
-      wifi_pass: data.property.wifiPass,
-      updated_at: new Date().toISOString(),
-    });
+    // 1. Property Profile
+    try {
+      await supabase.from('property_profile').upsert({
+        id: 'main_property',
+        name: data.property.name,
+        name_en: data.property.nameEn || '',
+        address: data.property.address || '',
+        phone: data.property.phone || '',
+        tax_id: data.property.taxId || '',
+        bank_name: data.property.bankName || '',
+        bank_account: data.property.bankAccount || '',
+        bank_account_name: data.property.bankAccountName || '',
+        prompt_pay_id: data.property.promptPayId || '',
+        prompt_pay_name: data.property.promptPayName || '',
+        line_id: data.property.lineId || '',
+        notes: '',
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.warn('Property sync warn:', e.message);
+    }
 
     // 2. Utility Config
-    await supabase.from('utility_config').upsert({
-      id: 'main_config',
-      water_rate_per_unit: data.utilityConfig.waterRatePerUnit,
-      water_billing_type: data.utilityConfig.waterBillingType,
-      water_flat_rate: data.utilityConfig.waterFlatRate,
-      water_per_person_rate: data.utilityConfig.waterPerPersonRate,
-      elec_rate_per_unit: data.utilityConfig.elecRatePerUnit,
-      common_fee_monthly: data.utilityConfig.commonFeeMonthly,
-      internet_fee_monthly: data.utilityConfig.internetFeeMonthly,
-      trash_fee_monthly: data.utilityConfig.trashFeeMonthly,
-      parking_fee_monthly: data.utilityConfig.parkingFeeMonthly,
-      min_water_charge: data.utilityConfig.minWaterCharge,
-      min_elec_charge: data.utilityConfig.minElecCharge,
-      updated_at: new Date().toISOString(),
-    });
+    try {
+      await supabase.from('utility_config').upsert({
+        id: 'main_config',
+        water_rate: data.utilityConfig.waterRatePerUnit,
+        elec_rate: data.utilityConfig.elecRatePerUnit,
+        common_fee: data.utilityConfig.commonFeeMonthly,
+        internet_fee: data.utilityConfig.internetFeeMonthly,
+        parking_fee: data.utilityConfig.parkingFeeMonthly,
+        trash_fee: data.utilityConfig.trashFeeMonthly,
+        water_calculation_type: data.utilityConfig.waterBillingType,
+        due_day_of_month: 5,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.warn('Utility config sync warn:', e.message);
+    }
 
     // 3. Rooms
     if (data.rooms.length > 0) {
-      const roomPayloads = data.rooms.map(r => ({
-        id: r.id,
-        number: r.number,
-        floor: r.floor,
-        building: r.building,
-        type: r.type,
-        status: r.status,
-        daily_rate: r.dailyRate,
-        monthly_rate: r.monthlyRate,
-        deposit_monthly: r.depositMonthly,
-        size_sqm: r.sizeSqm,
-        bed_type: r.bedType,
-        max_guests: r.maxGuests,
-        description: r.description,
-        current_water_meter: r.currentWaterMeter,
-        previous_water_meter: r.previousWaterMeter,
-        current_elec_meter: r.currentElecMeter,
-        previous_elec_meter: r.previousElecMeter,
-        meter_last_updated: r.meterLastUpdated,
-        images: r.images,
-        amenities: r.amenities,
-        current_tenant: r.currentTenant,
-        updated_at: new Date().toISOString(),
-      }));
-      await supabase.from('rooms').upsert(roomPayloads);
+      try {
+        const roomPayloads = data.rooms.map(r => ({
+          id: r.id,
+          number: r.number,
+          floor: r.floor,
+          type: r.type,
+          rental_type: 'monthly',
+          status: r.status,
+          daily_rate: r.dailyRate,
+          monthly_rate: r.monthlyRate,
+          deposit_monthly: r.depositMonthly,
+          current_water_meter: r.currentWaterMeter,
+          previous_water_meter: r.previousWaterMeter,
+          current_elec_meter: r.currentElecMeter,
+          previous_elec_meter: r.previousElecMeter,
+          meter_last_updated: r.meterLastUpdated,
+          images: r.images,
+          amenities: r.amenities,
+          current_tenant: r.currentTenant || null,
+          updated_at: new Date().toISOString(),
+        }));
+        const { error } = await supabase.from('rooms').upsert(roomPayloads);
+        if (error) throw error;
+        savedRooms = data.rooms.length;
+      } catch (e: any) {
+        errors.push(`Rooms: ${e.message}`);
+      }
     }
 
     // 4. Tenants
     if (data.tenants.length > 0) {
-      const tenantPayloads = data.tenants.map(t => ({
-        id: t.id,
-        name: t.name,
-        phone: t.phone,
-        email: t.email,
-        id_card: t.idCard,
-        room_number: t.roomNumber,
-        room_id: t.roomId,
-        rental_type: t.rentalType,
-        start_date: t.startDate,
-        end_date: t.endDate,
-        deposit_amount: t.depositAmount,
-        monthly_rent: t.monthlyRent,
-        emergency_contact: t.emergencyContact,
-        emergency_phone: t.emergencyPhone,
-        id_card_image: t.idCardImage,
-        note: t.note,
-        status: t.status,
-      }));
-      await supabase.from('tenants').upsert(tenantPayloads);
+      try {
+        const tenantPayloads = data.tenants.map(t => ({
+          id: t.id,
+          name: t.name,
+          phone: t.phone,
+          email: t.email || '',
+          id_card: t.idCard,
+          room_number: t.roomNumber,
+          room_id: t.roomId,
+          rental_type: t.rentalType || 'monthly',
+          start_date: t.startDate,
+          end_date: t.endDate || null,
+          deposit_amount: t.depositAmount || 0,
+          monthly_rent: t.monthlyRent || 0,
+          emergency_contact: t.emergencyContact || '',
+          emergency_phone: t.emergencyPhone || '',
+          status: t.status || 'active',
+        }));
+        const { error } = await supabase.from('tenants').upsert(tenantPayloads);
+        if (error) throw error;
+        savedTenants = data.tenants.length;
+      } catch (e: any) {
+        errors.push(`Tenants: ${e.message}`);
+      }
     }
 
     // 5. Bookings
     if (data.bookings.length > 0) {
-      const bookingPayloads = data.bookings.map(b => ({
-        id: b.id,
-        booking_code: b.bookingCode,
-        room_id: b.roomId,
-        room_number: b.roomNumber,
-        room_type: b.roomType,
-        guest_name: b.guestName,
-        phone: b.phone,
-        email: b.email,
-        rental_type: b.rentalType,
-        check_in_date: b.checkInDate,
-        check_out_date: b.checkOutDate,
-        duration_units: b.durationUnits,
-        guests_count: b.guestsCount,
-        room_rate_total: b.roomRateTotal,
-        deposit: b.deposit,
-        cleaning_fee: b.cleaningFee,
-        discount: b.discount,
-        total_amount: b.totalAmount,
-        payment_status: b.paymentStatus,
-        payment_method: b.paymentMethod,
-        created_at: b.createdAt,
-        special_requests: b.specialRequests,
-      }));
-      await supabase.from('bookings').upsert(bookingPayloads);
+      try {
+        const bookingPayloads = data.bookings.map(b => ({
+          id: b.id,
+          booking_code: b.bookingCode,
+          room_id: b.roomId,
+          room_number: b.roomNumber,
+          room_type: b.roomType,
+          guest_name: b.guestName,
+          phone: b.phone,
+          email: b.email,
+          rental_type: b.rentalType,
+          check_in_date: b.checkInDate,
+          check_out_date: b.checkOutDate,
+          duration_days: b.durationUnits || 1,
+          duration_months: b.durationUnits || 1,
+          room_rate_total: b.roomRateTotal,
+          deposit: b.deposit,
+          total_amount: b.totalAmount,
+          payment_status: b.paymentStatus,
+          payment_method: b.paymentMethod,
+          booking_date: b.createdAt ? b.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+          note: b.specialRequests || '',
+        }));
+        const { error } = await supabase.from('bookings').upsert(bookingPayloads);
+        if (error) throw error;
+        savedBookings = data.bookings.length;
+      } catch (e: any) {
+        errors.push(`Bookings: ${e.message}`);
+      }
     }
 
-    // 6. Bills
+    // 6. Utility Bills
     if (data.bills.length > 0) {
-      const billPayloads = data.bills.map(b => ({
-        id: b.id,
-        bill_number: b.billNumber,
-        room_id: b.roomId,
-        room_number: b.roomNumber,
-        tenant_name: b.tenantName,
-        tenant_phone: b.tenantPhone,
-        month_year: b.monthYear,
-        billing_date: b.billingDate,
-        due_date: b.dueDate,
-        room_rent_amount: b.roomRentAmount,
-        prev_water_meter: b.prevWaterMeter,
-        curr_water_meter: b.currWaterMeter,
-        water_units: b.waterUnits,
-        water_rate: b.waterRate,
-        water_amount: b.waterAmount,
-        prev_elec_meter: b.prevElecMeter,
-        curr_elec_meter: b.currElecMeter,
-        elec_units: b.elecUnits,
-        elec_rate: b.elecRate,
-        elec_amount: b.elecAmount,
-        common_fee: b.commonFee,
-        internet_fee: b.internetFee,
-        parking_fee: b.parkingFee,
-        trash_fee: b.trashFee,
-        other_fees: b.otherFees,
-        other_fees_note: b.otherFeesNote,
-        subtotal: b.subtotal,
-        discount: b.discount,
-        grand_total: b.grandTotal,
-        payment_status: b.paymentStatus,
-        paid_amount: b.paidAmount,
-        remaining_balance: b.remainingBalance,
-        paid_date: b.paidDate,
-        paid_method: b.paidMethod,
-        slip_image: b.slipImage,
-        attached_contract: b.attachedContract,
-        updated_at: new Date().toISOString(),
-      }));
-      await supabase.from('utility_bills').upsert(billPayloads);
+      try {
+        const billPayloads = data.bills.map(b => ({
+          id: b.id,
+          bill_number: b.billNumber,
+          room_id: b.roomId,
+          room_number: b.roomNumber,
+          tenant_name: b.tenantName,
+          tenant_phone: b.tenantPhone,
+          month_year: b.monthYear,
+          billing_date: b.billingDate,
+          due_date: b.dueDate,
+          room_rent_amount: b.roomRentAmount,
+          prev_water_meter: b.prevWaterMeter,
+          curr_water_meter: b.currWaterMeter,
+          water_units: b.waterUnits,
+          water_rate: b.waterRate,
+          water_amount: b.waterAmount,
+          prev_elec_meter: b.prevElecMeter,
+          curr_elec_meter: b.currElecMeter,
+          elec_units: b.elecUnits,
+          elec_rate: b.elecRate,
+          elec_amount: b.elecAmount,
+          common_fee: b.commonFee,
+          internet_fee: b.internetFee,
+          parking_fee: b.parkingFee,
+          trash_fee: b.trashFee,
+          other_fees: b.otherFees,
+          other_fees_note: b.otherFeesNote,
+          subtotal: b.subtotal,
+          discount: b.discount,
+          grand_total: b.grandTotal,
+          payment_status: b.paymentStatus,
+          paid_amount: b.paidAmount,
+          remaining_balance: b.remainingBalance,
+          paid_date: b.paidDate,
+          paid_method: b.paidMethod,
+          slip_image: b.slipImage,
+          attached_contract: b.attachedContract,
+        }));
+        const { error } = await supabase.from('utility_bills').upsert(billPayloads);
+        if (error) throw error;
+        savedBills = data.bills.length;
+      } catch (e: any) {
+        errors.push(`Bills: ${e.message}`);
+      }
     }
 
-    // Also trigger Realtime Broadcast to notify all other online clients
+    // Trigger Realtime Broadcast
     broadcastRealtimeChange(supabase, 'stayflow_live_sync', 'FULL_SYNC', data);
+
+    if (errors.length > 0) {
+      return {
+        success: false,
+        message: `พบข้อผิดพลาดบางส่วน: ${errors.join(', ')}`,
+        details: { rooms: savedRooms, tenants: savedTenants, bookings: savedBookings, bills: savedBills },
+      };
+    }
 
     return { 
       success: true, 
-      message: 'อัปโหลดและซิงค์ข้อมูลขึ้น Supabase Cloud Database สำเร็จแล้ว ทุกเครื่องจะได้รับข้อมูลเดียวกันแบบ Real-Time!' 
+      message: `บันทึกขึ้น Supabase สำเร็จแล้ว! (ห้องพัก: ${savedRooms} ห้อง, ผู้เช่า: ${savedTenants} คน, รายการจอง: ${savedBookings} รายการ, บิล: ${savedBills} ใบ)`,
+      details: { rooms: savedRooms, tenants: savedTenants, bookings: savedBookings, bills: savedBills },
     };
   } catch (err: any) {
-    return { success: false, message: `ซิงค์ข้อมูลไม่สำเร็จ: ${err.message || 'กรุณาตรวจสอบว่าสร้างตารางใน Supabase แล้วหรือไม่'}` };
+    return { success: false, message: `ซิงค์ข้อมูลไม่สำเร็จ: ${err.message}` };
   }
 }
