@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, Building2, CreditCard, Droplets, Zap, 
@@ -56,6 +56,15 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
     title: string;
     description: string;
   } | null>(null);
+
+  // Synchronize internal form when props change (e.g. from Cloud sync or parent update)
+  useEffect(() => {
+    setPropForm(property);
+  }, [property]);
+
+  useEffect(() => {
+    setUtilForm(utilityConfig);
+  }, [utilityConfig]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();

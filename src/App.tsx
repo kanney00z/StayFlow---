@@ -31,6 +31,8 @@ import {
   broadcastRealtimeChange,
   fetchAllFromSupabase,
   syncAllToSupabase,
+  savePropertyToCloud,
+  saveUtilityConfigToCloud,
   saveTenantsToCloud,
   saveRoomsToCloud,
   saveBookingsToCloud,
@@ -342,6 +344,20 @@ export default function App() {
       saveRoomsToCloud(updated);
       return updated;
     });
+  };
+
+  const handleUpdateProperty = (newProp: PropertyProfile) => {
+    setProperty(newProp);
+    safeStorage.setItem('stayflow_property', newProp);
+    notifyRealtimeChange('PROPERTY_UPDATE', newProp);
+    savePropertyToCloud(newProp);
+  };
+
+  const handleUpdateUtilityConfig = (newConfig: UtilityRateConfig) => {
+    setUtilityConfig(newConfig);
+    safeStorage.setItem('stayflow_utility_config', newConfig);
+    notifyRealtimeChange('CONFIG_UPDATE', newConfig);
+    saveUtilityConfigToCloud(newConfig);
   };
 
   const handleResetDemoData = () => {
@@ -698,10 +714,7 @@ export default function App() {
               <UtilityCalculator
                 rooms={rooms}
                 utilityConfig={utilityConfig}
-                onUpdateUtilityConfig={(cfg) => {
-                  setUtilityConfig(cfg);
-                  notifyRealtimeChange('CONFIG_UPDATE', cfg);
-                }}
+                onUpdateUtilityConfig={handleUpdateUtilityConfig}
                 onUpdateRoomMeters={handleUpdateRoomMeters}
                 onGenerateBill={handleGenerateBill}
                 onDeleteBill={handleDeleteBill}
@@ -738,14 +751,8 @@ export default function App() {
                 tenants={tenants}
                 bookings={bookings}
                 bills={bills}
-                onUpdateProperty={(prop) => {
-                  setProperty(prop);
-                  notifyRealtimeChange('PROPERTY_UPDATE', prop);
-                }}
-                onUpdateUtilityConfig={(cfg) => {
-                  setUtilityConfig(cfg);
-                  notifyRealtimeChange('CONFIG_UPDATE', cfg);
-                }}
+                onUpdateProperty={handleUpdateProperty}
+                onUpdateUtilityConfig={handleUpdateUtilityConfig}
                 onClearBookings={() => handleClearBookings('all')}
                 onClearBills={handleClearBills}
                 onResetMeters={handleResetMeters}

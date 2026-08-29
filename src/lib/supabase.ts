@@ -687,6 +687,63 @@ export async function fetchAllFromSupabase(): Promise<{
 /**
  * Auto-save individual entities to Supabase
  */
+export async function savePropertyToCloud(property: PropertyProfile) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('property_profile').upsert({
+      id: 'main_property',
+      name: property.name || '',
+      name_en: property.nameEn || '',
+      address: property.address || '',
+      phone: property.phone || '',
+      tax_id: property.taxId || '',
+      bank_name: property.bankName || '',
+      bank_account: property.bankAccount || '',
+      bank_account_name: property.bankAccountName || '',
+      prompt_pay_id: property.promptPayId || '',
+      prompt_pay_name: property.promptPayName || '',
+      line_id: property.lineId || '',
+      wifi_ssid: property.wifiSsid || '',
+      wifi_pass: property.wifiPass || '',
+      notes: '',
+      updated_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Error saving property to Supabase:', err);
+  }
+}
+
+export async function saveUtilityConfigToCloud(config: UtilityRateConfig) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('utility_config').upsert({
+      id: 'main_config',
+      water_rate: config.waterRatePerUnit,
+      water_rate_per_unit: config.waterRatePerUnit,
+      water_billing_type: config.waterBillingType,
+      water_flat_rate: config.waterFlatRate,
+      water_per_person_rate: config.waterPerPersonRate,
+      elec_rate: config.elecRatePerUnit,
+      elec_rate_per_unit: config.elecRatePerUnit,
+      common_fee: config.commonFeeMonthly,
+      common_fee_monthly: config.commonFeeMonthly,
+      internet_fee: config.internetFeeMonthly,
+      internet_fee_monthly: config.internetFeeMonthly,
+      parking_fee: config.parkingFeeMonthly,
+      parking_fee_monthly: config.parkingFeeMonthly,
+      trash_fee: config.trashFeeMonthly,
+      trash_fee_monthly: config.trashFeeMonthly,
+      water_calculation_type: config.waterBillingType,
+      due_day_of_month: 5,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Error saving utility config to Supabase:', err);
+  }
+}
+
 export async function saveTenantsToCloud(tenants: Tenant[]) {
   const supabase = getSupabase();
   if (!supabase || tenants.length === 0) return;
