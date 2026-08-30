@@ -493,6 +493,32 @@ END $$;
 /**
  * Fetch all cloud records from Supabase tables
  */
+async function fetchSingleConfigSafely(supabase: any) {
+  try {
+    // 1. Try with order updated_at
+    const res1 = await supabase.from('utility_config').select('*').order('updated_at', { ascending: false }).limit(1);
+    if (!res1.error && res1.data && res1.data.length > 0) return res1.data[0];
+  } catch {}
+  try {
+    // 2. Try simple select
+    const res2 = await supabase.from('utility_config').select('*').limit(1);
+    if (!res2.error && res2.data && res2.data.length > 0) return res2.data[0];
+  } catch {}
+  return null;
+}
+
+async function fetchSinglePropertySafely(supabase: any) {
+  try {
+    const res1 = await supabase.from('property_profile').select('*').order('updated_at', { ascending: false }).limit(1);
+    if (!res1.error && res1.data && res1.data.length > 0) return res1.data[0];
+  } catch {}
+  try {
+    const res2 = await supabase.from('property_profile').select('*').limit(1);
+    if (!res2.error && res2.data && res2.data.length > 0) return res2.data[0];
+  } catch {}
+  return null;
+}
+
 export async function fetchAllFromSupabase(): Promise<{
   property?: PropertyProfile;
   utilityConfig?: UtilityRateConfig;
@@ -506,15 +532,15 @@ export async function fetchAllFromSupabase(): Promise<{
 
   try {
     const [
-      { data: propData },
-      { data: configData },
+      propData,
+      configData,
       { data: roomsData },
       { data: tenantsData },
       { data: bookingsData },
       { data: billsData },
     ] = await Promise.all([
-      supabase.from('property_profile').select('*').limit(1).maybeSingle(),
-      supabase.from('utility_config').select('*').limit(1).maybeSingle(),
+      fetchSinglePropertySafely(supabase),
+      fetchSingleConfigSafely(supabase),
       supabase.from('rooms').select('*').order('number', { ascending: true }),
       supabase.from('tenants').select('*').order('created_at', { ascending: false }),
       supabase.from('bookings').select('*').order('created_at', { ascending: false }),
@@ -527,7 +553,7 @@ export async function fetchAllFromSupabase(): Promise<{
       result.property = {
         name: propData.name || '',
         nameEn: propData.name_en || '',
-        tagline: propData.tagline || '',
+        tagline: propData.tagline || propData.notes || '',
         address: propData.address || '',
         phone: propData.phone || '',
         email: propData.email || '',
@@ -545,17 +571,17 @@ export async function fetchAllFromSupabase(): Promise<{
 
     if (configData) {
       result.utilityConfig = {
-        waterRatePerUnit: Number(configData.water_rate_per_unit || configData.water_rate || 18),
-        waterBillingType: configData.water_billing_type || 'unit',
-        waterFlatRate: Number(configData.water_flat_rate || 100),
-        waterPerPersonRate: Number(configData.water_per_person_rate || 100),
-        elecRatePerUnit: Number(configData.elec_rate_per_unit || configData.elec_rate || 8),
-        commonFeeMonthly: Number(configData.common_fee_monthly || configData.common_fee || 300),
-        internetFeeMonthly: Number(configData.internet_fee_monthly || configData.internet_fee || 200),
-        trashFeeMonthly: Number(configData.trash_fee_monthly || configData.trash_fee || 40),
-        parkingFeeMonthly: Number(configData.parking_fee_monthly || configData.parking_fee || 300),
-        minWaterCharge: Number(configData.min_water_charge || 0),
-        minElecCharge: Number(configData.min_elec_charge || 0),
+        waterRatePerUnit: Number(configData.water_rate ?? configData.water_rate_per_unit ?? 18),
+        waterBillingType: configData.water_calculation_type || configData.water_billing_type || 'unit',
+        waterFlatRate: Number(configData.water_flat_rate ?? 100),
+        waterPerPersonRate: Number(configData.water_per_person_rate ?? 100),
+        elecRatePerUnit: Number(configData.elec_rate ?? configData.elec_rate_per_unit ?? 8),
+        commonFeeMonthly: Number(configData.common_fee ?? configData.common_fee_monthly ?? 300),
+        internetFeeMonthly: Number(configData.internet_fee ?? configData.internet_fee_monthly ?? 200),
+        trashFeeMonthly: Number(configData.trash_fee ?? configData.trash_fee_monthly ?? 40),
+        parkingFeeMonthly: Number(configData.parking_fee ?? configData.parking_fee_monthly ?? 300),
+        minWaterCharge: Number(configData.min_water_charge ?? 0),
+        minElecCharge: Number(configData.min_elec_charge ?? 0),
       };
     }
 
@@ -687,12 +713,12 @@ export async function fetchAllFromSupabase(): Promise<{
 /**
  * Auto-save individual entities to Supabase
  */
-export async function savePropertyToCloud(property: PropertyProfile) {
+export async function savePropertyToCloud(property: PropertyProfile): Promise<{ success: boolean; error?: any }> {
   const supabase = getSupabase();
-  if (!supabase) return;
+  if (!supabase) return { success: false, error: 'Supabase client not initialized' };
+
   try {
-    await supabase.from('property_profile').upsert({
-      id: 'main_property',
+    const payloadStandard: any = {
       name: property.name || '',
       name_en: property.nameEn || '',
       address: property.address || '',
@@ -704,43 +730,119 @@ export async function savePropertyToCloud(property: PropertyProfile) {
       prompt_pay_id: property.promptPayId || '',
       prompt_pay_name: property.promptPayName || '',
       line_id: property.lineId || '',
+      notes: property.tagline || '',
+    };
+
+    const payloadComprehensive: any = {
+      ...payloadStandard,
+      tagline: property.tagline || '',
+      email: property.email || '',
       wifi_ssid: property.wifiSsid || '',
       wifi_pass: property.wifiPass || '',
-      notes: '',
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    // 1. Check existing rows
+    const { data: existingRows } = await supabase
+      .from('property_profile')
+      .select('id');
+
+    if (existingRows && existingRows.length > 0) {
+      // Update all rows so no stale row remains
+      for (const row of existingRows) {
+        let { error } = await supabase.from('property_profile').update(payloadStandard).eq('id', row.id);
+        if (error) {
+          await supabase.from('property_profile').update(payloadComprehensive).eq('id', row.id);
+        }
+      }
+      return { success: true };
+    }
+
+    // 2. If no rows exist, try upserting / inserting
+    let { error: upsertErr } = await supabase
+      .from('property_profile')
+      .upsert({ id: 'main_property', ...payloadStandard }, { onConflict: 'id' });
+
+    if (upsertErr) {
+      await supabase.from('property_profile').insert(payloadStandard);
+    }
+    return { success: true };
   } catch (err) {
-    console.warn('Error saving property to Supabase:', err);
+    console.error('Error saving property to Supabase:', err);
+    return { success: false, error: err };
   }
 }
 
-export async function saveUtilityConfigToCloud(config: UtilityRateConfig) {
+export async function saveUtilityConfigToCloud(config: UtilityRateConfig): Promise<{ success: boolean; error?: any }> {
   const supabase = getSupabase();
-  if (!supabase) return;
+  if (!supabase) return { success: false, error: 'Supabase client not initialized' };
+
   try {
-    await supabase.from('utility_config').upsert({
-      id: 'main_config',
-      water_rate: config.waterRatePerUnit,
-      water_rate_per_unit: config.waterRatePerUnit,
-      water_billing_type: config.waterBillingType,
-      water_flat_rate: config.waterFlatRate,
-      water_per_person_rate: config.waterPerPersonRate,
-      elec_rate: config.elecRatePerUnit,
-      elec_rate_per_unit: config.elecRatePerUnit,
-      common_fee: config.commonFeeMonthly,
-      common_fee_monthly: config.commonFeeMonthly,
-      internet_fee: config.internetFeeMonthly,
-      internet_fee_monthly: config.internetFeeMonthly,
-      parking_fee: config.parkingFeeMonthly,
-      parking_fee_monthly: config.parkingFeeMonthly,
-      trash_fee: config.trashFeeMonthly,
-      trash_fee_monthly: config.trashFeeMonthly,
-      water_calculation_type: config.waterBillingType,
+    const payloadStandard: any = {
+      water_rate: Number(config.waterRatePerUnit),
+      elec_rate: Number(config.elecRatePerUnit),
+      common_fee: Number(config.commonFeeMonthly),
+      internet_fee: Number(config.internetFeeMonthly),
+      parking_fee: Number(config.parkingFeeMonthly),
+      trash_fee: Number(config.trashFeeMonthly),
+      water_calculation_type: config.waterBillingType || 'unit',
       due_day_of_month: 5,
+    };
+
+    const payloadComprehensive: any = {
+      ...payloadStandard,
+      water_rate_per_unit: Number(config.waterRatePerUnit),
+      elec_rate_per_unit: Number(config.elecRatePerUnit),
+      common_fee_monthly: Number(config.commonFeeMonthly),
+      internet_fee_monthly: Number(config.internetFeeMonthly),
+      parking_fee_monthly: Number(config.parkingFeeMonthly),
+      trash_fee_monthly: Number(config.trashFeeMonthly),
+      water_billing_type: config.waterBillingType || 'unit',
+      water_flat_rate: Number(config.waterFlatRate ?? 100),
+      water_per_person_rate: Number(config.waterPerPersonRate ?? 100),
+      min_water_charge: Number(config.minWaterCharge ?? 0),
+      min_elec_charge: Number(config.minElecCharge ?? 0),
       updated_at: new Date().toISOString(),
-    });
+    };
+
+    const payloadMinimal: any = {
+      water_rate: Number(config.waterRatePerUnit),
+      elec_rate: Number(config.elecRatePerUnit),
+      common_fee: Number(config.commonFeeMonthly),
+    };
+
+    // 1. Check existing rows
+    const { data: existingRows } = await supabase
+      .from('utility_config')
+      .select('id');
+
+    if (existingRows && existingRows.length > 0) {
+      // Update all rows so no stale row remains
+      for (const row of existingRows) {
+        let updateRes = await supabase.from('utility_config').update(payloadStandard).eq('id', row.id);
+        if (updateRes.error) {
+          updateRes = await supabase.from('utility_config').update(payloadComprehensive).eq('id', row.id);
+        }
+        if (updateRes.error) {
+          await supabase.from('utility_config').update(payloadMinimal).eq('id', row.id);
+        }
+      }
+      return { success: true };
+    }
+
+    // 2. If no rows exist, try upsert / insert
+    let insertRes = await supabase.from('utility_config').upsert({ id: 'main_config', ...payloadStandard }, { onConflict: 'id' });
+    if (insertRes.error) {
+      insertRes = await supabase.from('utility_config').insert(payloadStandard);
+    }
+    if (insertRes.error) {
+      insertRes = await supabase.from('utility_config').insert(payloadMinimal);
+    }
+
+    return { success: true };
   } catch (err) {
-    console.warn('Error saving utility config to Supabase:', err);
+    console.error('Error saving utility config to Supabase:', err);
+    return { success: false, error: err };
   }
 }
 

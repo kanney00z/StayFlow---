@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Settings, Building2, CreditCard, Droplets, Zap, 
   Wifi, Phone, Mail, Save, CheckCircle2, QrCode, Shield,
-  Trash2, AlertTriangle, RotateCcw, Database, RefreshCw
+  Trash2, AlertTriangle, RotateCcw, Database, RefreshCw, Loader2
 } from 'lucide-react';
 import { PropertyProfile, UtilityRateConfig, Room, Tenant, Booking, UtilityBill } from '../../types';
 import { SupabaseSettingsSection } from './SupabaseSettingsSection';
@@ -15,8 +15,8 @@ interface AdminSettingsProps {
   tenants?: Tenant[];
   bookings?: Booking[];
   bills?: UtilityBill[];
-  onUpdateProperty: (newProp: PropertyProfile) => void;
-  onUpdateUtilityConfig: (newConfig: UtilityRateConfig) => void;
+  onUpdateProperty: (newProp: PropertyProfile) => void | Promise<any>;
+  onUpdateUtilityConfig: (newConfig: UtilityRateConfig) => void | Promise<any>;
   onClearBookings?: () => void;
   onClearBills?: () => void;
   onResetMeters?: () => void;
@@ -51,27 +51,56 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
   const [propForm, setPropForm] = useState<PropertyProfile>(property);
   const [utilForm, setUtilForm] = useState<UtilityRateConfig>(utilityConfig);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
     type: 'bookings' | 'bills' | 'meters' | 'all';
     title: string;
     description: string;
   } | null>(null);
 
-  // Synchronize internal form when props change (e.g. from Cloud sync or parent update)
+  // Synchronize internal form when props change (only if not currently saving)
   useEffect(() => {
-    setPropForm(property);
-  }, [property]);
+    if (!isSaving) {
+      setPropForm(property);
+    }
+  }, [property, isSaving]);
 
   useEffect(() => {
-    setUtilForm(utilityConfig);
-  }, [utilityConfig]);
+    if (!isSaving) {
+      setUtilForm(utilityConfig);
+    }
+  }, [utilityConfig, isSaving]);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateProperty(propForm);
-    onUpdateUtilityConfig(utilForm);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setIsSaving(true);
+    
+    // Ensure all numeric fields are cleanly formatted
+    const cleanUtil: UtilityRateConfig = {
+      ...utilForm,
+      waterRatePerUnit: Number(utilForm.waterRatePerUnit) || 0,
+      elecRatePerUnit: Number(utilForm.elecRatePerUnit) || 0,
+      commonFeeMonthly: Number(utilForm.commonFeeMonthly) || 0,
+      internetFeeMonthly: Number(utilForm.internetFeeMonthly) || 0,
+      parkingFeeMonthly: Number(utilForm.parkingFeeMonthly) || 0,
+      trashFeeMonthly: Number(utilForm.trashFeeMonthly) || 0,
+      minWaterCharge: Number(utilForm.minWaterCharge) || 0,
+      minElecCharge: Number(utilForm.minElecCharge) || 0,
+      waterFlatRate: Number(utilForm.waterFlatRate) || 0,
+      waterPerPersonRate: Number(utilForm.waterPerPersonRate) || 0,
+    };
+
+    try {
+      await onUpdateProperty(propForm);
+      await onUpdateUtilityConfig(cleanUtil);
+      setUtilForm(cleanUtil);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3500);
+    } catch (err) {
+      console.error('Error saving settings:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleExecuteClear = () => {
@@ -121,10 +150,11 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
 
         <button
           type="submit"
-          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-md shadow-indigo-100 transition-all cursor-pointer"
+          disabled={isSaving}
+          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-75 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-md shadow-indigo-100 transition-all cursor-pointer"
         >
-          <Save className="w-4 h-4" />
-          <span>บันทึกการตั้งค่า</span>
+          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          <span>{isSaving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}</span>
         </button>
       </div>
 

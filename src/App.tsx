@@ -155,16 +155,40 @@ export default function App() {
           const hasRooms = Array.isArray(cloudData.rooms) && cloudData.rooms.length > 0;
           const hasTenants = Array.isArray(cloudData.tenants) && cloudData.tenants.length > 0;
           
-          if (hasRooms || hasTenants) {
-            if (cloudData.property) setProperty(cloudData.property);
-            if (cloudData.utilityConfig) setUtilityConfig(cloudData.utilityConfig);
-            if (hasRooms) setRooms(cloudData.rooms);
-            if (hasTenants) setTenants(cloudData.tenants);
-            if (cloudData.bookings && cloudData.bookings.length > 0) setBookings(cloudData.bookings);
-            if (cloudData.bills && cloudData.bills.length > 0) setBills(cloudData.bills);
+          if (cloudData.property && cloudData.property.name) {
+            setProperty(cloudData.property);
+            safeStorage.setItem('stayflow_property', cloudData.property);
           } else {
-            // If tables in cloud are newly created and empty, automatically push local data up to Supabase!
-            syncAllToSupabase({ property, utilityConfig, rooms, tenants, bookings, bills });
+            savePropertyToCloud(property);
+          }
+
+          if (cloudData.utilityConfig && (cloudData.utilityConfig.waterRatePerUnit || cloudData.utilityConfig.elecRatePerUnit)) {
+            setUtilityConfig(cloudData.utilityConfig);
+            safeStorage.setItem('stayflow_utility_config', cloudData.utilityConfig);
+          } else {
+            saveUtilityConfigToCloud(utilityConfig);
+          }
+
+          if (hasRooms) {
+            setRooms(cloudData.rooms!);
+            safeStorage.setItem('stayflow_rooms', cloudData.rooms!);
+          } else {
+            saveRoomsToCloud(rooms);
+          }
+
+          if (hasTenants) {
+            setTenants(cloudData.tenants!);
+            safeStorage.setItem('stayflow_tenants', cloudData.tenants!);
+          }
+
+          if (cloudData.bookings && cloudData.bookings.length > 0) {
+            setBookings(cloudData.bookings);
+            safeStorage.setItem('stayflow_bookings', cloudData.bookings);
+          }
+
+          if (cloudData.bills && cloudData.bills.length > 0) {
+            setBills(cloudData.bills);
+            safeStorage.setItem('stayflow_bills', cloudData.bills);
           }
         }
       }).catch(err => {
@@ -172,7 +196,7 @@ export default function App() {
       });
     }
 
-    // Subscribe to Supabase Real-Time Broadcast Channel
+    // Subscribe to Supabase Real-Time Broadcast & Postgres Changes Channels
     const supabase = getSupabase();
     if (supabase) {
       const channel = supabase.channel('stayflow_live_sync', {
@@ -187,24 +211,106 @@ export default function App() {
           
           if (payload.action === 'ROOMS_UPDATE' && Array.isArray(payload.data)) {
             setRooms(payload.data);
+            safeStorage.setItem('stayflow_rooms', payload.data);
           } else if (payload.action === 'BILLS_UPDATE' && Array.isArray(payload.data)) {
             setBills(payload.data);
+            safeStorage.setItem('stayflow_bills', payload.data);
           } else if (payload.action === 'BOOKINGS_UPDATE' && Array.isArray(payload.data)) {
             setBookings(payload.data);
+            safeStorage.setItem('stayflow_bookings', payload.data);
           } else if (payload.action === 'TENANTS_UPDATE' && Array.isArray(payload.data)) {
             setTenants(payload.data);
+            safeStorage.setItem('stayflow_tenants', payload.data);
           } else if (payload.action === 'PROPERTY_UPDATE' && payload.data) {
             setProperty(payload.data);
+            safeStorage.setItem('stayflow_property', payload.data);
           } else if (payload.action === 'CONFIG_UPDATE' && payload.data) {
             setUtilityConfig(payload.data);
+            safeStorage.setItem('stayflow_utility_config', payload.data);
           } else if (payload.action === 'FULL_SYNC' && payload.data) {
-            if (payload.data.rooms) setRooms(payload.data.rooms);
-            if (payload.data.bills) setBills(payload.data.bills);
-            if (payload.data.bookings) setBookings(payload.data.bookings);
-            if (payload.data.tenants) setTenants(payload.data.tenants);
-            if (payload.data.property) setProperty(payload.data.property);
-            if (payload.data.utilityConfig) setUtilityConfig(payload.data.utilityConfig);
+            if (payload.data.rooms) { setRooms(payload.data.rooms); safeStorage.setItem('stayflow_rooms', payload.data.rooms); }
+            if (payload.data.bills) { setBills(payload.data.bills); safeStorage.setItem('stayflow_bills', payload.data.bills); }
+            if (payload.data.bookings) { setBookings(payload.data.bookings); safeStorage.setItem('stayflow_bookings', payload.data.bookings); }
+            if (payload.data.tenants) { setTenants(payload.data.tenants); safeStorage.setItem('stayflow_tenants', payload.data.tenants); }
+            if (payload.data.property) { setProperty(payload.data.property); safeStorage.setItem('stayflow_property', payload.data.property); }
+            if (payload.data.utilityConfig) { setUtilityConfig(payload.data.utilityConfig); safeStorage.setItem('stayflow_utility_config', payload.data.utilityConfig); }
           }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_config' }, (payload: any) => {
+          if (payload.new) {
+            const c = payload.new;
+            const updated: UtilityRateConfig = {
+              waterRatePerUnit: Number(c.water_rate ?? c.water_rate_per_unit ?? 18),
+              waterBillingType: c.water_calculation_type || c.water_billing_type || 'unit',
+              waterFlatRate: Number(c.water_flat_rate ?? 100),
+              waterPerPersonRate: Number(c.water_per_person_rate ?? 100),
+              elecRatePerUnit: Number(c.elec_rate ?? c.elec_rate_per_unit ?? 8),
+              commonFeeMonthly: Number(c.common_fee ?? c.common_fee_monthly ?? 300),
+              internetFeeMonthly: Number(c.internet_fee ?? c.internet_fee_monthly ?? 200),
+              trashFeeMonthly: Number(c.trash_fee ?? c.trash_fee_monthly ?? 40),
+              parkingFeeMonthly: Number(c.parking_fee ?? c.parking_fee_monthly ?? 300),
+              minWaterCharge: Number(c.min_water_charge ?? 0),
+              minElecCharge: Number(c.min_elec_charge ?? 0),
+            };
+            setUtilityConfig(updated);
+            safeStorage.setItem('stayflow_utility_config', updated);
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'property_profile' }, (payload: any) => {
+          if (payload.new) {
+            const p = payload.new;
+            const updated: PropertyProfile = {
+              name: p.name || '',
+              nameEn: p.name_en || '',
+              tagline: p.notes || p.tagline || '',
+              address: p.address || '',
+              phone: p.phone || '',
+              email: p.email || '',
+              taxId: p.tax_id || '',
+              bankName: p.bank_name || '',
+              bankAccount: p.bank_account || '',
+              bankAccountName: p.bank_account_name || '',
+              promptPayId: p.prompt_pay_id || '',
+              promptPayName: p.prompt_pay_name || '',
+              lineId: p.line_id || '',
+              wifiSsid: p.wifi_ssid || '',
+              wifiPass: p.wifi_pass || '',
+            };
+            setProperty(updated);
+            safeStorage.setItem('stayflow_property', updated);
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
+          fetchAllFromSupabase().then(cloudData => {
+            if (cloudData?.rooms && cloudData.rooms.length > 0) {
+              setRooms(cloudData.rooms);
+              safeStorage.setItem('stayflow_rooms', cloudData.rooms);
+            }
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => {
+          fetchAllFromSupabase().then(cloudData => {
+            if (cloudData?.tenants) {
+              setTenants(cloudData.tenants);
+              safeStorage.setItem('stayflow_tenants', cloudData.tenants);
+            }
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
+          fetchAllFromSupabase().then(cloudData => {
+            if (cloudData?.bookings) {
+              setBookings(cloudData.bookings);
+              safeStorage.setItem('stayflow_bookings', cloudData.bookings);
+            }
+          });
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, () => {
+          fetchAllFromSupabase().then(cloudData => {
+            if (cloudData?.bills) {
+              setBills(cloudData.bills);
+              safeStorage.setItem('stayflow_bills', cloudData.bills);
+            }
+          });
         })
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
@@ -346,18 +452,18 @@ export default function App() {
     });
   };
 
-  const handleUpdateProperty = (newProp: PropertyProfile) => {
+  const handleUpdateProperty = async (newProp: PropertyProfile) => {
     setProperty(newProp);
     safeStorage.setItem('stayflow_property', newProp);
     notifyRealtimeChange('PROPERTY_UPDATE', newProp);
-    savePropertyToCloud(newProp);
+    await savePropertyToCloud(newProp);
   };
 
-  const handleUpdateUtilityConfig = (newConfig: UtilityRateConfig) => {
+  const handleUpdateUtilityConfig = async (newConfig: UtilityRateConfig) => {
     setUtilityConfig(newConfig);
     safeStorage.setItem('stayflow_utility_config', newConfig);
     notifyRealtimeChange('CONFIG_UPDATE', newConfig);
-    saveUtilityConfigToCloud(newConfig);
+    await saveUtilityConfigToCloud(newConfig);
   };
 
   const handleResetDemoData = () => {
