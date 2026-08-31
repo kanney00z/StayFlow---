@@ -6,9 +6,8 @@ import { UtilityCalculator } from './components/admin/UtilityCalculator';
 import { BookingTenantList } from './components/admin/BookingTenantList';
 import { AdminSettings } from './components/admin/AdminSettings';
 import { InvoiceModal } from './components/admin/InvoiceModal';
-import { MobileSyncModal } from './components/admin/MobileSyncModal';
 import { ClientBookingView } from './components/client/ClientBookingView';
-import { Smartphone, CheckCircle2, QrCode, Cloud, RefreshCw, X } from 'lucide-react';
+import { CheckCircle2, Cloud, RefreshCw, X } from 'lucide-react';
 
 import { 
   Room, Tenant, Booking, UtilityRateConfig, 
@@ -92,7 +91,6 @@ export default function App() {
   // Active Invoice Modal state
   const [selectedBillForInvoice, setSelectedBillForInvoice] = useState<UtilityBill | null>(null);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
-  const [isMobileSyncModalOpen, setIsMobileSyncModalOpen] = useState(false);
   const [syncToastMessage, setSyncToastMessage] = useState<string | null>(null);
   const [isFetchingCloud, setIsFetchingCloud] = useState<boolean>(false);
 
@@ -729,7 +727,6 @@ export default function App() {
         pendingBillsCount={pendingBillsCount}
         isRealtimeConnected={isRealtimeConnected}
         isSupabaseConfigured={isSupabaseConfigured()}
-        onOpenMobileSync={() => setIsMobileSyncModalOpen(true)}
       />
 
       {/* Sync Status Toast Alert */}
@@ -748,26 +745,6 @@ export default function App() {
             className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
           >
             <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Mobile Device Notice Banner if not yet connected to Supabase */}
-      {!isSupabaseConfigured() && currentMode === 'admin' && (
-        <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Smartphone className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>
-              <strong>เปิดใช้งานบนมือถือให้ข้อมูลตรงกัน:</strong> สแกน QR Code จากหน้าจอคอมพิวเตอร์ หรือเปิดผ่านลิงก์ที่ส่งจากคอมพิวเตอร์
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsMobileSyncModalOpen(true)}
-            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <QrCode className="w-3.5 h-3.5" />
-            <span>ดู QR Code / ลิงก์สำหรับมือถือ</span>
           </button>
         </div>
       )}
@@ -886,19 +863,6 @@ export default function App() {
         onUpdateStatus={handleUpdateBillStatus}
         onUpdateBillPayment={handleUpdateBillPayment}
         onUpdateBillContract={handleUpdateBillContract}
-      />
-
-      {/* Mobile Live Sync & Share Modal */}
-      <MobileSyncModal
-        isOpen={isMobileSyncModalOpen}
-        onClose={() => setIsMobileSyncModalOpen(false)}
-        onOpenSettings={() => setAdminTab('settings')}
-        property={property}
-        utilityConfig={utilityConfig}
-        rooms={rooms}
-        tenants={tenants}
-        bookings={bookings}
-        bills={bills}
       />
 
       {/* Footer */}

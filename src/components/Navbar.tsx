@@ -15,7 +15,6 @@ interface NavbarProps {
   pendingBillsCount: number;
   isRealtimeConnected?: boolean;
   isSupabaseConfigured?: boolean;
-  onOpenMobileSync?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -27,7 +26,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   pendingBillsCount,
   isRealtimeConnected = false,
   isSupabaseConfigured = false,
-  onOpenMobileSync,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white shadow-sm">
@@ -79,21 +77,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Action & Mode Switcher Pill */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Quick Mobile Sync Button */}
-            {onOpenMobileSync && (
-              <button
-                id="btn-open-mobile-sync-nav"
-                type="button"
-                onClick={onOpenMobileSync}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl text-xs sm:text-xs font-bold shadow-md shadow-indigo-950/40 transition-all border border-indigo-400/30 cursor-pointer"
-                title="สร้าง QR Code และลิงก์สำหรับเปิดในมือถือ ให้ข้อมูลตรงกับคอมพิวเตอร์ 100%"
-              >
-                <Smartphone className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-200" />
-                <span className="hidden sm:inline">เปิดในมือถือ (ข้อมูลตรงกัน)</span>
-                <span className="sm:hidden">ซิงค์มือถือ</span>
-              </button>
-            )}
-
             <div className="bg-slate-800/70 p-1 rounded-xl border border-slate-700/60 flex items-center">
               <button
                 type="button"
