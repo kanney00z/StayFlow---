@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { PropertyProfile, UtilityRateConfig, Room, Tenant, Booking, UtilityBill } from '../../types';
 import { SupabaseSettingsSection } from './SupabaseSettingsSection';
+import { LineSettingsSection } from './LineSettingsSection';
 
 interface AdminSettingsProps {
   property: PropertyProfile;
@@ -413,6 +414,12 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Section: LINE Official Account & Messaging API Notification */}
+      <LineSettingsSection
+        property={property}
+        onUpdateProperty={onUpdateProperty}
+      />
 
       {/* Section 3: Supabase Cloud Database & Real-Time Sync */}
       <SupabaseSettingsSection

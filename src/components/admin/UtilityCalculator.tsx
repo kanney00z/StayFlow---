@@ -5,11 +5,13 @@ import {
   FileText, CheckCircle2, AlertTriangle, ArrowRight,
   TrendingUp, Download, Check, Sparkles, Building, User,
   Plus, Edit3, ChevronRight, SlidersHorizontal, Eye, Trash2, RotateCcw,
-  History, BarChart3, Search, Filter, Clock
+  History, BarChart3, Search, Filter, Clock, MessageCircle
 } from 'lucide-react';
 import { Room, UtilityRateConfig, UtilityBill, PropertyProfile } from '../../types';
 import { formatCurrency, formatNumber } from '../../utils/formatters';
 import { RoomBillHistoryModal } from './RoomBillHistoryModal';
+import { DueBillsAlertBanner } from './DueBillsAlertBanner';
+import { LineBillNotifyModal } from './LineBillNotifyModal';
 
 interface UtilityCalculatorProps {
   rooms: Room[];
@@ -44,6 +46,7 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
   const [savedSuccessMsg, setSavedSuccessMsg] = useState<string | null>(null);
   const [billToDelete, setBillToDelete] = useState<UtilityBill | null>(null);
   const [selectedRoomForHistory, setSelectedRoomForHistory] = useState<Room | null>(null);
+  const [lineNotifyBill, setLineNotifyBill] = useState<UtilityBill | null>(null);
 
   // All bills history tab state
   const [historyRoomFilter, setHistoryRoomFilter] = useState<string>('all');
@@ -360,6 +363,14 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Due & Overdue Bills Alert Banner with LINE Notification */}
+      <DueBillsAlertBanner
+        bills={existingBills}
+        property={property}
+        onOpenLineModal={(b) => setLineNotifyBill(b)}
+        onOpenInvoiceModal={onOpenInvoiceModal}
+      />
 
       {/* Header Banner & Live Unit Rate Bar */}
       <div className="bg-white border border-slate-200 rounded-2xl md:rounded-3xl p-6 shadow-sm">
@@ -1142,6 +1153,16 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
                                 <span>ดูบิล</span>
                               </button>
 
+                              <button
+                                type="button"
+                                onClick={() => setLineNotifyBill(bill)}
+                                className="flex items-center gap-1 px-2.5 py-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer"
+                                title="ส่งแจ้งเตือนใน LINE"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                <span>LINE</span>
+                              </button>
+
                               {matchedRoom && (
                                 <button
                                   type="button"
@@ -1614,6 +1635,14 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
           />
         )}
       </AnimatePresence>
+
+      {/* LINE Notification Modal */}
+      <LineBillNotifyModal
+        isOpen={Boolean(lineNotifyBill)}
+        onClose={() => setLineNotifyBill(null)}
+        bill={lineNotifyBill}
+        property={property}
+      />
     </div>
   );
 };

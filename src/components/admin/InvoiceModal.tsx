@@ -4,7 +4,7 @@ import {
   X, Printer, CheckCircle2, QrCode, Send, 
   Copy, Check, FileText, Calendar, Building2, User, Phone, Zap, Droplets, CreditCard,
   Upload, Image as ImageIcon, Trash2, Eye, DollarSign, Clock, AlertCircle, Sparkles,
-  RefreshCw, CheckCircle, ArrowRight, Scale, ShieldCheck, Download
+  RefreshCw, CheckCircle, ArrowRight, Scale, ShieldCheck, Download, MessageCircle
 } from 'lucide-react';
 import { UtilityBill, PropertyProfile, Room, Tenant, LeaseContract } from '../../types';
 import { formatCurrency, formatDateThai } from '../../utils/formatters';
@@ -13,6 +13,7 @@ import { SlipViewerModal } from './SlipViewerModal';
 import { fileToBase64, generateSampleSlip } from '../../utils/slipHelpers';
 import { LeaseContractSection } from './LeaseContractSection';
 import { printHtmlContent, generateInvoiceHtml, downloadHtmlFile } from '../../utils/printHelpers';
+import { LineBillNotifyModal } from './LineBillNotifyModal';
 
 interface InvoiceModalProps {
   bill: UtilityBill | null;
@@ -55,6 +56,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const [activeTab, setActiveTab] = useState<'invoice' | 'payment' | 'contract'>('invoice');
   const [showQR, setShowQR] = useState(false);
   const [copiedLine, setCopiedLine] = useState(false);
+  const [showLineNotifyModal, setShowLineNotifyModal] = useState(false);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [includeContractInPrint, setIncludeContractInPrint] = useState<boolean>(true);
@@ -354,16 +356,27 @@ ${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${for
                       <span>{showQR ? 'ซ่อน PromptPay QR' : 'สแกนจ่าย PromptPay'}</span>
                     </button>
 
+                    <button
+                      type="button"
+                      id="btn-open-line-notify-modal"
+                      onClick={() => setShowLineNotifyModal(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#06C755] hover:bg-[#05b34c] active:scale-[0.98] text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-950/20 cursor-pointer"
+                      title="เปิดระบบส่งแจ้งเตือนใน LINE แบบการ์ดสวยงาม"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>แจ้งเตือนใน LINE</span>
+                    </button>
+
                     <div className="flex items-center rounded-xl bg-emerald-950/40 border border-emerald-500/40 p-0.5">
                       <button
                         type="button"
                         id="btn-direct-line-share"
                         onClick={handleOpenDirectLineShare}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
                         title="เปิดแอป LINE เพื่อเลือกแชทส่งให้ลูกค้าโดยตรง"
                       >
                         <Send className="w-3.5 h-3.5" />
-                        <span>เปิด LINE</span>
+                        <span>เปิดแอป LINE</span>
                       </button>
                       <button
                         type="button"
@@ -959,6 +972,14 @@ ${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${for
           slipReference={bill.slipReference || slipReference}
         />
       )}
+
+      {/* LINE Notification Modal */}
+      <LineBillNotifyModal
+        isOpen={showLineNotifyModal}
+        onClose={() => setShowLineNotifyModal(false)}
+        bill={bill}
+        property={property}
+      />
     </>
   );
 };

@@ -19,6 +19,9 @@ export interface RealtimeSyncPayload {
 // Client-side unique sender ID to avoid self-echo handling loops
 export const CLIENT_SESSION_ID = `client_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`;
 
+export const DEFAULT_SUPABASE_URL = 'https://iyiwangdlyquteukhhva.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_GNoGpqaIcb1nEvpjEF96oQ_eeyr5P2r';
+
 const STORAGE_KEY_SUPABASE_URL = 'stayflow_supabase_url';
 const STORAGE_KEY_SUPABASE_KEY = 'stayflow_supabase_key';
 
@@ -176,8 +179,8 @@ export function getSupabaseConfig(): SupabaseConfig {
   }
 
   return {
-    url: storedUrl || envUrl,
-    anonKey: storedKey || envKey,
+    url: storedUrl || envUrl || DEFAULT_SUPABASE_URL,
+    anonKey: storedKey || envKey || DEFAULT_SUPABASE_ANON_KEY,
   };
 }
 

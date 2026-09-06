@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { 
   Building2, Users, CreditCard, Droplets, Zap, 
@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { Room, Booking, UtilityBill, PropertyProfile } from '../../types';
 import { formatCurrency, formatDateThai, getStatusBadgeInfo } from '../../utils/formatters';
+import { DueBillsAlertBanner } from './DueBillsAlertBanner';
+import { LineBillNotifyModal } from './LineBillNotifyModal';
 
 interface AdminDashboardProps {
   rooms: Room[];
@@ -29,6 +31,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onOpenInvoiceModal,
   onNewBookingClick,
 }) => {
+  const [lineNotifyBill, setLineNotifyBill] = useState<UtilityBill | null>(null);
+
   // Calculations for stats
   const totalRooms = rooms.length;
   const occupiedRooms = rooms.filter(r => r.status === 'occupied').length;
@@ -91,6 +95,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Due & Overdue Bills Alert Banner with LINE Notification */}
+      <DueBillsAlertBanner
+        bills={bills}
+        property={property}
+        onOpenLineModal={(b) => setLineNotifyBill(b)}
+        onOpenInvoiceModal={onOpenInvoiceModal}
+      />
 
       {/* 4 Main Stat Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -408,6 +420,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* LINE Notification Modal */}
+      <LineBillNotifyModal
+        isOpen={Boolean(lineNotifyBill)}
+        onClose={() => setLineNotifyBill(null)}
+        bill={lineNotifyBill}
+        property={property}
+      />
     </div>
   );
 };

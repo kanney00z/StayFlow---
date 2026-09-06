@@ -53,6 +53,8 @@ export interface Tenant {
   idCardImage?: string;
   note?: string;
   status: 'active' | 'checked_out';
+  lineId?: string;
+  lineUserId?: string; // LINE User ID (starts with U...) for direct push notifications
 }
 
 export interface Booking {
@@ -227,6 +229,9 @@ export interface PropertyProfile {
   bankAccount: string;
   bankAccountName: string;
   lineId: string;
+  lineChannelAccessToken?: string;
+  lineBotBasicId?: string; // e.g. @141xvjme
+  lineNotifyTargetId?: string; // Default LINE User ID or Group ID to receive notifications
   wifiSsid: string;
   wifiPass: string;
 }
