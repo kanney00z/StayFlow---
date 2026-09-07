@@ -31,7 +31,7 @@ export const LineSettingsSection: React.FC<LineSettingsSectionProps> = ({
   const [botInfo, setBotInfo] = useState<LineBotInfoResponse | null>(null);
   const [loadingInfo, setLoadingInfo] = useState(false);
   const [testSending, setTestSending] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; isStatic?: boolean } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Load bot info on mount
@@ -74,12 +74,23 @@ export const LineSettingsSection: React.FC<LineSettingsSectionProps> = ({
     setTokenInput(DEFAULT_LINE_CHANNEL_ACCESS_TOKEN);
   };
 
+  const handleOpenDirectLineTest = () => {
+    const sampleMsg = `🔔 [ทดสอบระบบแจ้งเตือนหอพัก]
+🏢 ${property.name || 'หอพัก NGR StayFlow'}
+ยินดีต้อนรับสู่ระบบแจ้งเตือนค่าเช่าและค่าน้ำ-ค่าไฟอัตโนมัติ
+✅ สถานะ: ระบบ LINE พร้อมใช้งาน 100%
+สามารถเลือกส่งแชทให้ผู้เช่าหรือกลุ่มหอพักได้ทันที 🙏`;
+    const url = `https://line.me/R/msg/text/?${encodeURIComponent(sampleMsg)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   const handleSendTest = async (isBroadcast: boolean = false) => {
     setTestSending(true);
     setTestResult(null);
     try {
+      const targetId = targetIdInput.trim();
       const res = await sendLineTestMessage(
-        isBroadcast ? undefined : (targetIdInput.trim() || undefined),
+        isBroadcast ? undefined : (targetId || undefined),
         isBroadcast,
         tokenInput
       );
@@ -89,13 +100,14 @@ export const LineSettingsSection: React.FC<LineSettingsSectionProps> = ({
           success: true,
           message: isBroadcast 
             ? 'ส่งข้อความทดสอบแบบ Broadcast ถึงผู้ใช้ใน LINE OA เรียบร้อยแล้ว!' 
-            : (targetIdInput.trim() 
-                ? `ส่งข้อความทดสอบตรงเข้า ${targetIdInput.trim()} เรียบร้อยแล้ว!` 
-                : 'ทดสอบรูปแบบข้อความ Flex Message ถูกต้อง 100%! (ระบุ LINE User ID เพื่อรับข้อความเข้ามือถือ)')
+            : (targetId 
+                ? `ส่งข้อความทดสอบตรงเข้า ${targetId} เรียบร้อยแล้ว!` 
+                : 'ตรวจสอบโครงสร้างข้อความ Flex Message ถูกต้องตามมาตรฐาน LINE 100%! (หากต้องการให้เด้งเข้ามือถือ สามารถระบุ LINE User ID ด้านบน หรือกดปุ่ม "เปิดแอป LINE ส่งตรง")')
         });
       } else {
         setTestResult({
           success: false,
+          isStatic: res.isStaticOrNoBackend,
           message: res.error || 'ส่งข้อความทดสอบไม่สำเร็จ กรุณาตรวจสอบ Token หรือ User ID'
         });
       }
@@ -229,17 +241,28 @@ export const LineSettingsSection: React.FC<LineSettingsSectionProps> = ({
 
         {/* Test Result Message */}
         {testResult && (
-          <div className={`p-3 rounded-xl text-xs flex items-start gap-2.5 border ${
+          <div className={`p-3.5 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 border ${
             testResult.success 
               ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
               : 'bg-rose-50 border-rose-200 text-rose-900'
           }`}>
-            {testResult.success ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            )}
-            <div className="text-xs leading-relaxed">{testResult.message}</div>
+            <div className="flex items-start gap-2.5">
+              {testResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <div className="text-xs leading-relaxed">{testResult.message}</div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOpenDirectLineTest}
+              className="px-3 py-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-lg text-xs font-bold shrink-0 self-start sm:self-auto cursor-pointer flex items-center gap-1.5 shadow-xs"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>เปิดแอป LINE ทดสอบ</span>
+            </button>
           </div>
         )}
 
@@ -258,10 +281,21 @@ export const LineSettingsSection: React.FC<LineSettingsSectionProps> = ({
             type="button"
             onClick={() => handleSendTest(false)}
             disabled={testSending}
-            className="px-4 py-2 bg-[#06C755] hover:bg-[#05b34c] disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+            className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+            title="ทดสอบส่งผ่าน Messaging API Bot เข้า User ID"
           >
             <Send className="w-3.5 h-3.5" />
-            <span>{testSending ? 'กำลังทดสอบ...' : 'ทดสอบส่งการ์ด Flex Message'}</span>
+            <span>{testSending ? 'กำลังทดสอบ...' : 'ทดสอบผ่าน Messaging API'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenDirectLineTest}
+            className="px-4 py-2 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+            title="เปิดแอป LINE เพื่อเลือกแชททดสอบส่งทันที (ใช้งานได้ 100% ทุกเครื่องและทุกโฮสติ้ง)"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            <span>เปิดแอป LINE ทดสอบส่งตรง</span>
           </button>
 
           <button
@@ -271,7 +305,7 @@ export const LineSettingsSection: React.FC<LineSettingsSectionProps> = ({
             className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>ทดสอบส่ง Broadcast ให้ผู้ติดตามทั้งหมด</span>
+            <span>ทดสอบ Broadcast ทุกคน</span>
           </button>
         </div>
       </div>

@@ -68,6 +68,71 @@ export interface LineBotInfoResponse {
   };
   tokenMasked?: string;
   error?: string;
+  isStaticOrNoBackend?: boolean;
+}
+
+/**
+ * Robust JSON response parser that never throws "Unexpected end of JSON input"
+ * Even if the server returns 404 HTML, empty body, or non-JSON data
+ */
+async function parseSafeResponse<T = any>(
+  res: Response, 
+  fallbackErrorMessage: string = 'เกิดข้อผิดพลาดในการเชื่อมต่อ'
+): Promise<{ success: boolean; data?: T; error?: string; isStaticOrNoBackend?: boolean; details?: any }> {
+  try {
+    const text = await res.text();
+    if (!text || !text.trim()) {
+      if (res.ok) {
+        return { success: true, data: {} as T };
+      }
+      return {
+        success: false,
+        error: `${fallbackErrorMessage} (เซิร์ฟเวอร์ตอบกลับว่างเปล่า HTTP ${res.status})`
+      };
+    }
+
+    const trimmed = text.trim();
+    // Check if the response is HTML (such as a 404 page or SPA fallback index.html)
+    if (trimmed.startsWith('<') || trimmed.startsWith('<!DOCTYPE') || trimmed.includes('<html')) {
+      const is404 = res.status === 404;
+      return {
+        success: false,
+        isStaticOrNoBackend: true,
+        error: is404
+          ? 'ไม่พบบริการ Backend API (/api/line) บนเซิร์ฟเวอร์นี้ (เช่น กำลังเปิดในโหมด Static Hosting) — แนะนำให้ใช้ปุ่ม "เปิดแอป LINE เพื่อส่งตรง" เพื่อส่งบิลเข้า LINE ได้ 100%'
+          : `เซิร์ฟเวอร์ตอบกลับเป็นหน้าเว็บ HTML (HTTP ${res.status}) แนะนำให้ใช้ปุ่ม "เปิดแอป LINE เพื่อส่งตรง"`
+      };
+    }
+
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return {
+        success: false,
+        error: `${fallbackErrorMessage} (${trimmed.slice(0, 100)})`
+      };
+    }
+
+    if (!res.ok) {
+      const errMsg = parsed?.error || parsed?.message || parsed?.details?.message || `${fallbackErrorMessage} (HTTP ${res.status})`;
+      return {
+        success: false,
+        error: errMsg,
+        details: parsed
+      };
+    }
+
+    return {
+      success: true,
+      data: parsed
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || fallbackErrorMessage
+    };
+  }
 }
 
 export async function fetchLineBotInfo(customToken?: string): Promise<LineBotInfoResponse> {
@@ -75,8 +140,22 @@ export async function fetchLineBotInfo(customToken?: string): Promise<LineBotInf
   try {
     const url = `/api/line/bot-info?token=${encodeURIComponent(token)}`;
     const res = await fetch(url);
-    const data = await res.json();
-    return data;
+    const result = await parseSafeResponse<LineBotInfoResponse>(res, 'ไม่สามารถดึงข้อมูลบอท LINE ได้');
+
+    if (!result.success) {
+      return {
+        success: false,
+        error: result.error,
+        isStaticOrNoBackend: result.isStaticOrNoBackend,
+        bot: {
+          userId: '',
+          basicId: DEFAULT_LINE_BOT_BASIC_ID,
+          displayName: DEFAULT_LINE_BOT_NAME,
+          chatMode: 'bot'
+        }
+      };
+    }
+    return result.data || { success: true };
   } catch (err: any) {
     return {
       success: false,
@@ -96,7 +175,7 @@ export async function sendLineBillReminder(
   bill: UtilityBill,
   property: PropertyProfile,
   options: SendBillOptions = {}
-): Promise<{ success: boolean; mode?: string; recipient?: string; error?: string; details?: any }> {
+): Promise<{ success: boolean; mode?: string; recipient?: string; error?: string; isStaticOrNoBackend?: boolean; details?: any }> {
   try {
     const token = options.token || getStoredLineToken();
     const res = await fetch('/api/line/send-bill', {
@@ -112,8 +191,17 @@ export async function sendLineBillReminder(
       })
     });
 
-    const data = await res.json();
-    return data;
+    const result = await parseSafeResponse(res, 'ส่งบิลแจ้งเตือนไม่สำเร็จ');
+    if (!result.success) {
+      return {
+        success: false,
+        isStaticOrNoBackend: result.isStaticOrNoBackend,
+        error: result.error,
+        details: result.details
+      };
+    }
+
+    return result.data || { success: true };
   } catch (err: any) {
     return {
       success: false,
@@ -126,7 +214,7 @@ export async function sendLineTestMessage(
   targetId?: string,
   broadcast: boolean = false,
   customToken?: string
-): Promise<{ success: boolean; error?: string; details?: any }> {
+): Promise<{ success: boolean; error?: string; isStaticOrNoBackend?: boolean; details?: any }> {
   try {
     const token = customToken || getStoredLineToken();
     const testFlex = {
@@ -211,9 +299,19 @@ export async function sendLineTestMessage(
       })
     });
 
-    return await res.json();
+    const result = await parseSafeResponse(res, 'ส่งข้อความทดสอบไม่สำเร็จ');
+    if (!result.success) {
+      return {
+        success: false,
+        isStaticOrNoBackend: result.isStaticOrNoBackend,
+        error: result.error,
+        details: result.details
+      };
+    }
+
+    return result.data || { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    return { success: false, error: err.message || 'ส่งข้อความทดสอบไม่สำเร็จ' };
   }
 }
 
