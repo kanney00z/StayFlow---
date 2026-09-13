@@ -480,6 +480,18 @@ ALTER TABLE public.tenants DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.utility_bills DISABLE ROW LEVEL SECURITY;
 
+-- อัปเดตคอลัมน์ในกรณีที่ตารางถูกสร้างไว้ก่อนหน้านี้ (Schema Migration)
+ALTER TABLE IF EXISTS public.rooms ADD COLUMN IF NOT EXISTS deposit_monthly NUMERIC DEFAULT 5000;
+ALTER TABLE IF EXISTS public.rooms ADD COLUMN IF NOT EXISTS daily_rate NUMERIC DEFAULT 890;
+ALTER TABLE IF EXISTS public.rooms ADD COLUMN IF NOT EXISTS monthly_rate NUMERIC DEFAULT 4000;
+ALTER TABLE IF EXISTS public.rooms ADD COLUMN IF NOT EXISTS size_sqm NUMERIC DEFAULT 28;
+ALTER TABLE IF EXISTS public.rooms ADD COLUMN IF NOT EXISTS bed_type TEXT DEFAULT 'King Bed (6 ฟุต)';
+ALTER TABLE IF EXISTS public.rooms ADD COLUMN IF NOT EXISTS max_guests INTEGER DEFAULT 2;
+ALTER TABLE IF EXISTS public.rooms ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+ALTER TABLE IF EXISTS public.rooms ADD COLUMN IF NOT EXISTS building TEXT DEFAULT 'A';
+ALTER TABLE IF EXISTS public.tenants ADD COLUMN IF NOT EXISTS line_user_id TEXT;
+ALTER TABLE IF EXISTS public.tenants ADD COLUMN IF NOT EXISTS line_id TEXT;
+
 -- ==========================================
 -- ⚡ เปิดใช้งาน Real-Time Replication สำหรับทุกตาราง
 -- ==========================================
@@ -608,29 +620,48 @@ export async function fetchAllFromSupabase(): Promise<{
     }
 
     if (Array.isArray(roomsData)) {
-      result.rooms = roomsData.map((r: any) => ({
-        id: r.id,
-        number: r.number,
-        floor: Number(r.floor || 1),
-        building: r.building || 'A',
-        type: r.type || 'Standard',
-        status: r.status || 'available',
-        dailyRate: Number(r.daily_rate || 890),
-        monthlyRate: Number(r.monthly_rate || 4000),
-        depositMonthly: Number(r.deposit_monthly || 5000),
-        sizeSqm: Number(r.size_sqm || 28),
-        bedType: r.bed_type || 'King Bed (6 ฟุต)',
-        maxGuests: Number(r.max_guests || 2),
-        description: r.description || '',
-        currentWaterMeter: Number(r.current_water_meter || 0),
-        previousWaterMeter: Number(r.previous_water_meter || 0),
-        currentElecMeter: Number(r.current_elec_meter || 0),
-        previousElecMeter: Number(r.previous_elec_meter || 0),
-        meterLastUpdated: r.meter_last_updated,
-        images: r.images || [],
-        amenities: r.amenities || [],
-        currentTenant: r.current_tenant,
-      }));
+      result.rooms = roomsData.map((r: any) => {
+        // Extract embedded deposit if column deposit_monthly is null or doesn't exist
+        let depositVal: number | null = null;
+        if (r.deposit_monthly !== undefined && r.deposit_monthly !== null) {
+          depositVal = Number(r.deposit_monthly);
+        } else if (Array.isArray(r.amenities)) {
+          const metaTag = r.amenities.find((a: any) => typeof a === 'string' && a.startsWith('meta:deposit:'));
+          if (metaTag) {
+            const parsed = Number(metaTag.replace('meta:deposit:', ''));
+            if (!isNaN(parsed)) depositVal = parsed;
+          }
+        }
+
+        // Clean out internal meta tags from display amenities
+        const cleanAmenities = Array.isArray(r.amenities)
+          ? r.amenities.filter((a: any) => typeof a === 'string' && !a.startsWith('meta:'))
+          : [];
+
+        return {
+          id: r.id,
+          number: r.number,
+          floor: Number(r.floor || 1),
+          building: r.building || 'A',
+          type: r.type || 'Standard',
+          status: r.status || 'available',
+          dailyRate: Number(r.daily_rate ?? 890),
+          monthlyRate: Number(r.monthly_rate ?? 4000),
+          depositMonthly: depositVal !== null ? depositVal : 5000,
+          sizeSqm: Number(r.size_sqm ?? 28),
+          bedType: r.bed_type || 'King Bed (6 ฟุต)',
+          maxGuests: Number(r.max_guests ?? 2),
+          description: r.description || '',
+          currentWaterMeter: Number(r.current_water_meter ?? 0),
+          previousWaterMeter: Number(r.previous_water_meter ?? 0),
+          currentElecMeter: Number(r.current_elec_meter ?? 0),
+          previousElecMeter: Number(r.previous_elec_meter ?? 0),
+          meterLastUpdated: r.meter_last_updated,
+          images: r.images || [],
+          amenities: cleanAmenities,
+          currentTenant: r.current_tenant,
+        };
+      });
     }
 
     if (Array.isArray(tenantsData)) {
@@ -919,7 +950,36 @@ export async function saveRoomsToCloud(rooms: Room[]) {
       current_tenant: r.currentTenant || null,
       updated_at: new Date().toISOString(),
     }));
-    await supabase.from('rooms').upsert(payloads);
+    const { error } = await supabase.from('rooms').upsert(payloads);
+    if (error) {
+      console.warn('Rooms upsert returned error, attempting resilient fallback format:', error.message);
+      // Fallback: If deposit_monthly or other new column does not exist on user's table,
+      // embed deposit info in amenities array so it is preserved without failure
+      const fallbackPayloads = rooms.map(r => {
+        const cleanAmenities = (r.amenities || []).filter(a => typeof a === 'string' && !a.startsWith('meta:deposit:'));
+        cleanAmenities.push(`meta:deposit:${r.depositMonthly}`);
+        return {
+          id: r.id,
+          number: r.number,
+          floor: r.floor,
+          type: r.type,
+          rental_type: 'monthly',
+          status: r.status,
+          daily_rate: r.dailyRate,
+          monthly_rate: r.monthlyRate,
+          current_water_meter: r.currentWaterMeter,
+          previous_water_meter: r.previousWaterMeter,
+          current_elec_meter: r.currentElecMeter,
+          previous_elec_meter: r.previousElecMeter,
+          meter_last_updated: r.meterLastUpdated,
+          images: r.images,
+          amenities: cleanAmenities,
+          current_tenant: r.currentTenant || null,
+          updated_at: new Date().toISOString(),
+        };
+      });
+      await supabase.from('rooms').upsert(fallbackPayloads);
+    }
   } catch (err) {
     console.warn('Error saving rooms to Supabase:', err);
   }
@@ -1160,7 +1220,34 @@ export async function syncAllToSupabase(data: {
           updated_at: new Date().toISOString(),
         }));
         const { error } = await supabase.from('rooms').upsert(roomPayloads);
-        if (error) throw error;
+        if (error) {
+          console.warn('Rooms upsert in export returned error, attempting fallback:', error.message);
+          const fallbackPayloads = data.rooms.map(r => {
+            const cleanAmenities = (r.amenities || []).filter(a => typeof a === 'string' && !a.startsWith('meta:deposit:'));
+            cleanAmenities.push(`meta:deposit:${r.depositMonthly}`);
+            return {
+              id: r.id,
+              number: r.number,
+              floor: r.floor,
+              type: r.type,
+              rental_type: 'monthly',
+              status: r.status,
+              daily_rate: r.dailyRate,
+              monthly_rate: r.monthlyRate,
+              current_water_meter: r.currentWaterMeter,
+              previous_water_meter: r.previousWaterMeter,
+              current_elec_meter: r.currentElecMeter,
+              previous_elec_meter: r.previousElecMeter,
+              meter_last_updated: r.meterLastUpdated,
+              images: r.images,
+              amenities: cleanAmenities,
+              current_tenant: r.currentTenant || null,
+              updated_at: new Date().toISOString(),
+            };
+          });
+          const { error: fallbackError } = await supabase.from('rooms').upsert(fallbackPayloads);
+          if (fallbackError) throw fallbackError;
+        }
         savedRooms = data.rooms.length;
       } catch (e: any) {
         errors.push(`Rooms: ${e.message}`);

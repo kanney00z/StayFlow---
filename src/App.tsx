@@ -420,6 +420,7 @@ export default function App() {
           }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
+          if (Date.now() - lastLocalSaveTimestamp.current < 3000) return;
           fetchAllFromSupabase().then(cloudData => {
             if (cloudData?.rooms && cloudData.rooms.length > 0) {
               setRooms(cloudData.rooms);
@@ -428,6 +429,7 @@ export default function App() {
           });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => {
+          if (Date.now() - lastLocalSaveTimestamp.current < 3000) return;
           fetchAllFromSupabase().then(cloudData => {
             if (cloudData?.tenants) {
               setTenants(cloudData.tenants);
@@ -436,6 +438,7 @@ export default function App() {
           });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
+          if (Date.now() - lastLocalSaveTimestamp.current < 3000) return;
           fetchAllFromSupabase().then(cloudData => {
             if (cloudData?.bookings) {
               setBookings(cloudData.bookings);
@@ -444,6 +447,7 @@ export default function App() {
           });
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, () => {
+          if (Date.now() - lastLocalSaveTimestamp.current < 3000) return;
           fetchAllFromSupabase().then(cloudData => {
             if (cloudData?.bills) {
               setBills(cloudData.bills);
@@ -475,30 +479,60 @@ export default function App() {
 
   // Handlers for Room updates
   const handleUpdateRoomStatus = (roomId: string, newStatus: RoomStatus) => {
-    setRooms(prev => {
-      const updated = prev.map(r => r.id === roomId ? { ...r, status: newStatus } : r);
-      notifyRealtimeChange('ROOMS_UPDATE', updated);
-      saveRoomsToCloud(updated);
-      return updated;
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+    const updated = rooms.map(r => r.id === roomId ? { ...r, status: newStatus } : r);
+    setRooms(updated);
+    safeStorage.setItem('stayflow_rooms', updated);
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updated,
+      tenants,
+      bookings,
+      bills,
+      updatedAt: now,
     });
+    notifyRealtimeChange('ROOMS_UPDATE', updated);
+    saveRoomsToCloud(updated);
   };
 
   const handleUpdateRoom = (updatedRoom: Room) => {
-    setRooms(prev => {
-      const updated = prev.map(r => r.id === updatedRoom.id ? updatedRoom : r);
-      notifyRealtimeChange('ROOMS_UPDATE', updated);
-      saveRoomsToCloud(updated);
-      return updated;
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+    const updated = rooms.map(r => r.id === updatedRoom.id ? updatedRoom : r);
+    setRooms(updated);
+    safeStorage.setItem('stayflow_rooms', updated);
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updated,
+      tenants,
+      bookings,
+      bills,
+      updatedAt: now,
     });
+    notifyRealtimeChange('ROOMS_UPDATE', updated);
+    saveRoomsToCloud(updated);
   };
 
   const handleAddRoom = (newRoom: Room) => {
-    setRooms(prev => {
-      const updated = [newRoom, ...prev];
-      notifyRealtimeChange('ROOMS_UPDATE', updated);
-      saveRoomsToCloud(updated);
-      return updated;
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+    const updated = [newRoom, ...rooms];
+    setRooms(updated);
+    safeStorage.setItem('stayflow_rooms', updated);
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updated,
+      tenants,
+      bookings,
+      bills,
+      updatedAt: now,
     });
+    notifyRealtimeChange('ROOMS_UPDATE', updated);
+    saveRoomsToCloud(updated);
   };
 
   const handleDeleteRoom = (roomId: string) => {
@@ -538,41 +572,61 @@ export default function App() {
 
   // Handlers for Meter update
   const handleUpdateRoomMeters = (roomId: string, newWater: number, newElec: number) => {
-    setRooms(prev => {
-      const updated = prev.map(r => {
-        if (r.id === roomId) {
-          return {
-            ...r,
-            previousWaterMeter: r.currentWaterMeter,
-            currentWaterMeter: newWater,
-            previousElecMeter: r.currentElecMeter,
-            currentElecMeter: newElec,
-            meterLastUpdated: new Date().toISOString().split('T')[0],
-          };
-        }
-        return r;
-      });
-      notifyRealtimeChange('ROOMS_UPDATE', updated);
-      saveRoomsToCloud(updated);
-      return updated;
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+    const updated = rooms.map(r => {
+      if (r.id === roomId) {
+        return {
+          ...r,
+          previousWaterMeter: r.currentWaterMeter,
+          currentWaterMeter: newWater,
+          previousElecMeter: r.currentElecMeter,
+          currentElecMeter: newElec,
+          meterLastUpdated: new Date().toISOString().split('T')[0],
+        };
+      }
+      return r;
     });
+    setRooms(updated);
+    safeStorage.setItem('stayflow_rooms', updated);
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updated,
+      tenants,
+      bookings,
+      bills,
+      updatedAt: now,
+    });
+    notifyRealtimeChange('ROOMS_UPDATE', updated);
+    saveRoomsToCloud(updated);
   };
 
   // Handlers for Bills
   const handleGenerateBill = (newBill: UtilityBill) => {
-    setBills(prev => {
-      const existingIdx = prev.findIndex(b => b.id === newBill.id);
-      let updated: UtilityBill[];
-      if (existingIdx >= 0) {
-        updated = [...prev];
-        updated[existingIdx] = newBill;
-      } else {
-        updated = [newBill, ...prev];
-      }
-      notifyRealtimeChange('BILLS_UPDATE', updated);
-      saveBillsToCloud(updated);
-      return updated;
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+    const existingIdx = bills.findIndex(b => b.id === newBill.id);
+    let updated: UtilityBill[];
+    if (existingIdx >= 0) {
+      updated = [...bills];
+      updated[existingIdx] = newBill;
+    } else {
+      updated = [newBill, ...bills];
+    }
+    setBills(updated);
+    safeStorage.setItem('stayflow_bills', updated);
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms,
+      tenants,
+      bookings,
+      bills: updated,
+      updatedAt: now,
     });
+    notifyRealtimeChange('BILLS_UPDATE', updated);
+    saveBillsToCloud(updated);
   };
 
   const handleDeleteBill = (billId: string) => {
@@ -621,18 +675,28 @@ export default function App() {
   };
 
   const handleResetMeters = () => {
-    setRooms(prev => {
-      const updated = prev.map(r => ({
-        ...r,
-        previousWaterMeter: 0,
-        currentWaterMeter: 0,
-        previousElecMeter: 0,
-        currentElecMeter: 0,
-      }));
-      notifyRealtimeChange('ROOMS_UPDATE', updated);
-      saveRoomsToCloud(updated);
-      return updated;
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+    const updated = rooms.map(r => ({
+      ...r,
+      previousWaterMeter: 0,
+      currentWaterMeter: 0,
+      previousElecMeter: 0,
+      currentElecMeter: 0,
+    }));
+    setRooms(updated);
+    safeStorage.setItem('stayflow_rooms', updated);
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updated,
+      tenants,
+      bookings,
+      bills,
+      updatedAt: now,
     });
+    notifyRealtimeChange('ROOMS_UPDATE', updated);
+    saveRoomsToCloud(updated);
   };
 
   const handleUpdateProperty = async (newProp: PropertyProfile) => {
@@ -955,12 +1019,22 @@ export default function App() {
   };
 
   const handleUpdateBookingStatus = (bookingId: string, status: 'paid' | 'pending' | 'cancelled') => {
-    setBookings(prev => {
-      const updated = prev.map(b => b.id === bookingId ? { ...b, paymentStatus: status } : b);
-      notifyRealtimeChange('BOOKINGS_UPDATE', updated);
-      saveBookingsToCloud(updated);
-      return updated;
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+    const updated = bookings.map(b => b.id === bookingId ? { ...b, paymentStatus: status } : b);
+    setBookings(updated);
+    safeStorage.setItem('stayflow_bookings', updated);
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms,
+      tenants,
+      bookings: updated,
+      bills,
+      updatedAt: now,
     });
+    notifyRealtimeChange('BOOKINGS_UPDATE', updated);
+    saveBookingsToCloud(updated);
   };
 
   const handleCloudDataSynced = (data: {

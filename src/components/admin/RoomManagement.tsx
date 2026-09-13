@@ -590,8 +590,8 @@ export const RoomManagement: React.FC<RoomManagementProps> = ({
                       <label className="text-slate-600 block mb-1 font-medium">เงินประกันรายเดือน (บาท)</label>
                       <input
                         type="number"
-                        value={selectedRoom.depositMonthly}
-                        onChange={(e) => setSelectedRoom({ ...selectedRoom, depositMonthly: parseFloat(e.target.value) || 0 })}
+                        value={selectedRoom.depositMonthly ?? ''}
+                        onChange={(e) => setSelectedRoom({ ...selectedRoom, depositMonthly: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 font-mono focus:bg-white focus:border-indigo-500 outline-none"
                       />
                     </div>
@@ -802,9 +802,9 @@ export const RoomManagement: React.FC<RoomManagementProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <label className="text-slate-600 block mb-1 font-medium">ค่าเช่ารายเดือน (บาท/เดือน)</label>
+                      <label className="text-slate-600 block mb-1 font-medium">ค่าเช่ารายเดือน (บาท)</label>
                       <input
                         type="number"
                         value={newRoomData.monthlyRate}
@@ -813,11 +813,20 @@ export const RoomManagement: React.FC<RoomManagementProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="text-slate-600 block mb-1 font-medium">ค่าเช่ารายวัน (บาท/คืน)</label>
+                      <label className="text-slate-600 block mb-1 font-medium">ค่าเช่ารายวัน (บาท)</label>
                       <input
                         type="number"
                         value={newRoomData.dailyRate}
                         onChange={(e) => setNewRoomData({ ...newRoomData, dailyRate: parseFloat(e.target.value) || 0 })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 font-mono focus:bg-white focus:border-indigo-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-600 block mb-1 font-medium">เงินประกัน (บาท)</label>
+                      <input
+                        type="number"
+                        value={newRoomData.depositMonthly ?? ''}
+                        onChange={(e) => setNewRoomData({ ...newRoomData, depositMonthly: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 })}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 font-mono focus:bg-white focus:border-indigo-500 outline-none"
                       />
                     </div>
