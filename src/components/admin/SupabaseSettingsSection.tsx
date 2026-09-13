@@ -45,7 +45,7 @@ export const SupabaseSettingsSection: React.FC<SupabaseSettingsSectionProps> = (
   const [isTesting, setIsTesting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; isQuotaExceeded?: boolean } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
   const [copiedMobileLink, setCopiedMobileLink] = useState(false);
   const [showSqlCode, setShowSqlCode] = useState(false);
@@ -70,6 +70,17 @@ export const SupabaseSettingsSection: React.FC<SupabaseSettingsSectionProps> = (
       }).then(setQrCodeUrl).catch(console.error);
     }
   }, []);
+
+  const handleResetForNewProject = () => {
+    setSupabaseUrl('');
+    setSupabaseKey('');
+    saveSupabaseConfig('', '');
+    setIsConnected(false);
+    setTestResult({
+      success: true,
+      message: 'ล้างค่าเดิมเรียบร้อยแล้ว กรุณากรอก Project URL และ anon key ของ Supabase โปรเจกต์ใหม่ด้านบน แล้วกดบันทึก'
+    });
+  };
 
   const handleTestConnection = async () => {
     setIsTesting(true);
@@ -334,22 +345,54 @@ export const SupabaseSettingsSection: React.FC<SupabaseSettingsSectionProps> = (
 
         {/* Test Result Alert */}
         {testResult && (
-          <div className={`p-4 rounded-2xl text-xs flex items-start gap-3 border ${
+          <div className={`p-4 rounded-2xl text-xs flex flex-col gap-3 border ${
             testResult.success 
               ? 'bg-emerald-50 text-emerald-900 border-emerald-200' 
-              : 'bg-rose-50 text-rose-900 border-rose-200'
+              : testResult.isQuotaExceeded || testResult.message.includes('exceed_egress_quota')
+                ? 'bg-amber-50 text-amber-950 border-amber-300'
+                : 'bg-rose-50 text-rose-900 border-rose-200'
           }`}>
-            {testResult.success ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            ) : (
-              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            )}
-            <div className="space-y-0.5">
-              <span className="font-bold block">
-                {testResult.success ? 'สำเร็จ' : 'ข้อความแจ้งเตือน'}
-              </span>
-              <p className="leading-relaxed">{testResult.message}</p>
+            <div className="flex items-start gap-3">
+              {testResult.success ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              ) : testResult.isQuotaExceeded || testResult.message.includes('exceed_egress_quota') ? (
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-1 flex-1">
+                <span className="font-bold block text-sm">
+                  {testResult.success 
+                    ? 'เชื่อมต่อสำเร็จ' 
+                    : testResult.isQuotaExceeded || testResult.message.includes('exceed_egress_quota')
+                      ? '⚠️ โควต้า Egress ของโปรเจกต์ Supabase เต็มแล้ว (exceed_egress_quota)'
+                      : 'ข้อความแจ้งเตือน'}
+                </span>
+                <p className="leading-relaxed whitespace-pre-line text-xs">{testResult.message}</p>
+              </div>
             </div>
+
+            {/* Quick Action Buttons for Quota Exceeded */}
+            {(testResult.isQuotaExceeded || testResult.message.includes('exceed_egress_quota')) && (
+              <div className="pt-2 border-t border-amber-200 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetForNewProject}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs cursor-pointer shadow-xs"
+                >
+                  ล้างค่าเพื่อใส่โปรเจกต์ใหม่
+                </button>
+                <a
+                  href="https://supabase.com/dashboard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-black text-white rounded-lg font-bold text-xs flex items-center gap-1.5"
+                >
+                  <span>เปิด Supabase Dashboard</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            )}
           </div>
         )}
       </div>

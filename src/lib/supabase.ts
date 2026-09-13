@@ -236,10 +236,23 @@ export function getSupabase(): SupabaseClient | null {
   }
 }
 
+export function formatSupabaseErrorMessage(rawMessage: string): { message: string; isQuotaExceeded: boolean } {
+  if (!rawMessage) {
+    return { message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ Supabase', isQuotaExceeded: false };
+  }
+  if (rawMessage.includes('exceed_egress_quota') || rawMessage.includes('violations: exceed_egress_quota')) {
+    return {
+      message: 'โควต้าการรับส่งข้อมูล (Egress Quota) ของโปรเจกต์ Supabase นี้เต็มแล้ว (exceed_egress_quota) ทาง Supabase จึงระงับ API ของโปรเจกต์นี้ชั่วคราว ทำให้ข้อมูลระหว่างเครื่องไม่สามารถซิงค์หากันได้',
+      isQuotaExceeded: true
+    };
+  }
+  return { message: rawMessage, isQuotaExceeded: false };
+}
+
 /**
  * Test Connection to Supabase
  */
-export async function testSupabaseConnection(url?: string, anonKey?: string): Promise<{ success: boolean; message: string }> {
+export async function testSupabaseConnection(url?: string, anonKey?: string): Promise<{ success: boolean; message: string; isQuotaExceeded?: boolean }> {
   try {
     const testUrl = url || getSupabaseConfig().url;
     const testKey = anonKey || getSupabaseConfig().anonKey;
@@ -258,10 +271,11 @@ export async function testSupabaseConnection(url?: string, anonKey?: string): Pr
     const { error } = await testClient.from('rooms').select('id').limit(1);
 
     if (error && error.code !== 'PGRST116' && error.code !== '42P01') {
-      // 42P01 is table does not exist (connection is ok, but schema not yet migrated)
+      const formatted = formatSupabaseErrorMessage(error.message);
       return { 
         success: false, 
-        message: `เชื่อมต่อไม่สำเร็จ: ${error.message}` 
+        message: `เชื่อมต่อไม่สำเร็จ: ${formatted.message}`,
+        isQuotaExceeded: formatted.isQuotaExceeded
       };
     }
 
@@ -270,7 +284,12 @@ export async function testSupabaseConnection(url?: string, anonKey?: string): Pr
       message: 'เชื่อมต่อกับ Supabase และ Real-Time Engine สำเร็จเรียบร้อย!' 
     };
   } catch (err: any) {
-    return { success: false, message: `เกิดข้อผิดพลาด: ${err.message || 'ไม่สามารถติดต่อ Supabase ได้'}` };
+    const formatted = formatSupabaseErrorMessage(err.message || '');
+    return { 
+      success: false, 
+      message: `เกิดข้อผิดพลาด: ${formatted.message || 'ไม่สามารถติดต่อ Supabase ได้'}`,
+      isQuotaExceeded: formatted.isQuotaExceeded
+    };
   }
 }
 
@@ -588,7 +607,7 @@ export async function fetchAllFromSupabase(): Promise<{
       };
     }
 
-    if (roomsData && roomsData.length > 0) {
+    if (Array.isArray(roomsData)) {
       result.rooms = roomsData.map((r: any) => ({
         id: r.id,
         number: r.number,
@@ -614,7 +633,7 @@ export async function fetchAllFromSupabase(): Promise<{
       }));
     }
 
-    if (tenantsData && tenantsData.length > 0) {
+    if (Array.isArray(tenantsData)) {
       result.tenants = tenantsData.map((t: any) => ({
         id: t.id,
         name: t.name,
@@ -636,7 +655,7 @@ export async function fetchAllFromSupabase(): Promise<{
       }));
     }
 
-    if (bookingsData && bookingsData.length > 0) {
+    if (Array.isArray(bookingsData)) {
       result.bookings = bookingsData.map((b: any) => ({
         id: b.id,
         bookingCode: b.booking_code,
@@ -663,7 +682,7 @@ export async function fetchAllFromSupabase(): Promise<{
       }));
     }
 
-    if (billsData && billsData.length > 0) {
+    if (Array.isArray(billsData)) {
       result.bills = billsData.map((b: any) => ({
         id: b.id,
         billNumber: b.bill_number,
@@ -935,6 +954,74 @@ export async function saveBookingsToCloud(bookings: Booking[]) {
     await supabase.from('bookings').upsert(payloads);
   } catch (err) {
     console.warn('Error saving bookings to Supabase:', err);
+  }
+}
+
+export async function deleteBookingFromCloud(bookingId: string) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('bookings').delete().eq('id', bookingId);
+  } catch (err) {
+    console.warn('Error deleting booking from Supabase:', err);
+  }
+}
+
+export async function clearBookingsFromCloud(bookingIds?: string[]) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    if (bookingIds && bookingIds.length > 0) {
+      await supabase.from('bookings').delete().in('id', bookingIds);
+    } else {
+      await supabase.from('bookings').delete().neq('id', '___all_placeholder___');
+    }
+  } catch (err) {
+    console.warn('Error clearing bookings from Supabase:', err);
+  }
+}
+
+export async function deleteTenantFromCloud(tenantId: string) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('tenants').delete().eq('id', tenantId);
+  } catch (err) {
+    console.warn('Error deleting tenant from Supabase:', err);
+  }
+}
+
+export async function deleteRoomFromCloud(roomId: string) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('rooms').delete().eq('id', roomId);
+  } catch (err) {
+    console.warn('Error deleting room from Supabase:', err);
+  }
+}
+
+export async function deleteBillFromCloud(billId: string) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await supabase.from('utility_bills').delete().eq('id', billId);
+  } catch (err) {
+    console.warn('Error deleting bill from Supabase:', err);
+  }
+}
+
+export async function clearBillsFromCloud(billIds?: string[]) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    if (billIds && billIds.length > 0) {
+      await supabase.from('utility_bills').delete().in('id', billIds);
+    } else {
+      await supabase.from('utility_bills').delete().neq('id', '___all_placeholder___');
+    }
+  } catch (err) {
+    console.warn('Error clearing bills from Supabase:', err);
   }
 }
 

@@ -24,6 +24,15 @@ import {
 } from './data/initialData';
 
 import { safeStorage } from './lib/storage';
+import { 
+  fetchServerState, 
+  saveServerState, 
+  deleteBookingFromServer,
+  clearBookingsFromServer,
+  deleteTenantFromServer,
+  deleteBillFromServer,
+  ServerSyncData 
+} from './lib/serverSync';
 
 import {
   getSupabase,
@@ -36,6 +45,12 @@ import {
   saveRoomsToCloud,
   saveBookingsToCloud,
   saveBillsToCloud,
+  deleteBookingFromCloud,
+  clearBookingsFromCloud,
+  deleteTenantFromCloud,
+  deleteBillFromCloud,
+  clearBillsFromCloud,
+  deleteRoomFromCloud,
   isSupabaseConfigured,
   parseAndApplySyncFromUrl,
   CLIENT_SESSION_ID,
@@ -143,58 +158,184 @@ export default function App() {
     safeStorage.setItem('stayflow_bills', bills);
   }, [bills]);
 
-  // Real-time Initialization and Cloud Hydration
+  // Last server state update timestamp to avoid re-applying our own changes
+  const lastLocalSaveTimestamp = useRef<number>(0);
+  const isServerSyncActive = useRef<boolean>(false);
+
+  // Real-time Initialization and Cloud / Server Hydration
   useEffect(() => {
-    // Fetch initial data from Supabase Cloud if configured
-    if (isSupabaseConfigured() && !isInitialCloudFetched.current) {
-      isInitialCloudFetched.current = true;
-      fetchAllFromSupabase().then((cloudData) => {
-        if (cloudData) {
-          const hasRooms = Array.isArray(cloudData.rooms) && cloudData.rooms.length > 0;
-          const hasTenants = Array.isArray(cloudData.tenants) && cloudData.tenants.length > 0;
-          
-          if (cloudData.property && cloudData.property.name) {
-            setProperty(cloudData.property);
-            safeStorage.setItem('stayflow_property', cloudData.property);
-          } else {
-            savePropertyToCloud(property);
-          }
+    let isMounted = true;
 
-          if (cloudData.utilityConfig && (cloudData.utilityConfig.waterRatePerUnit || cloudData.utilityConfig.elecRatePerUnit)) {
-            setUtilityConfig(cloudData.utilityConfig);
-            safeStorage.setItem('stayflow_utility_config', cloudData.utilityConfig);
-          } else {
-            saveUtilityConfigToCloud(utilityConfig);
-          }
+    async function initDataHydration() {
+      let cloudSuccess = false;
 
-          if (hasRooms) {
-            setRooms(cloudData.rooms!);
-            safeStorage.setItem('stayflow_rooms', cloudData.rooms!);
-          } else {
-            saveRoomsToCloud(rooms);
-          }
+      // 1. Try fetching from Supabase Cloud if configured
+      if (isSupabaseConfigured() && !isInitialCloudFetched.current) {
+        isInitialCloudFetched.current = true;
+        try {
+          const cloudData = await fetchAllFromSupabase();
+          if (cloudData && isMounted) {
+            const hasRooms = Array.isArray(cloudData.rooms) && cloudData.rooms.length > 0;
+            const hasTenants = Array.isArray(cloudData.tenants) && cloudData.tenants.length > 0;
+            
+            if (cloudData.property && cloudData.property.name) {
+              setProperty(cloudData.property);
+              safeStorage.setItem('stayflow_property', cloudData.property);
+            }
 
-          if (hasTenants) {
-            setTenants(cloudData.tenants!);
-            safeStorage.setItem('stayflow_tenants', cloudData.tenants!);
-          }
+            if (cloudData.utilityConfig) {
+              setUtilityConfig(cloudData.utilityConfig);
+              safeStorage.setItem('stayflow_utility_config', cloudData.utilityConfig);
+            }
 
-          if (cloudData.bookings && cloudData.bookings.length > 0) {
-            setBookings(cloudData.bookings);
-            safeStorage.setItem('stayflow_bookings', cloudData.bookings);
-          }
+            if (hasRooms) {
+              setRooms(cloudData.rooms!);
+              safeStorage.setItem('stayflow_rooms', cloudData.rooms!);
+            }
 
-          if (cloudData.bills && cloudData.bills.length > 0) {
-            setBills(cloudData.bills);
-            safeStorage.setItem('stayflow_bills', cloudData.bills);
+            if (hasTenants) {
+              setTenants(cloudData.tenants!);
+              safeStorage.setItem('stayflow_tenants', cloudData.tenants!);
+            }
+
+            if (Array.isArray(cloudData.bookings)) {
+              setBookings(cloudData.bookings);
+              safeStorage.setItem('stayflow_bookings', cloudData.bookings);
+            }
+
+            if (Array.isArray(cloudData.bills)) {
+              setBills(cloudData.bills);
+              safeStorage.setItem('stayflow_bills', cloudData.bills);
+            }
+
+            cloudSuccess = Boolean(hasRooms || hasTenants || cloudData.property);
+            if (cloudSuccess) {
+              lastLocalSaveTimestamp.current = Date.now();
+            }
           }
+        } catch (err) {
+          console.warn('Initial Supabase sync error (will fallback to server sync):', err);
         }
-      }).catch(err => {
-        console.warn('Initial cloud sync check:', err);
-      });
+      }
+
+      // 2. Server-side State Hydration (Reliable fallback if Supabase quota is exceeded or offline)
+      try {
+        const serverData = await fetchServerState();
+        if (serverData && isMounted) {
+          if (!cloudSuccess) {
+            // Apply server state if cloud was not populated or quota restricted
+            if (serverData.property && serverData.property.name) {
+              setProperty(serverData.property);
+              safeStorage.setItem('stayflow_property', serverData.property);
+            }
+            if (serverData.utilityConfig) {
+              setUtilityConfig(serverData.utilityConfig);
+              safeStorage.setItem('stayflow_utility_config', serverData.utilityConfig);
+            }
+            if (Array.isArray(serverData.rooms) && serverData.rooms.length > 0) {
+              setRooms(serverData.rooms);
+              safeStorage.setItem('stayflow_rooms', serverData.rooms);
+            }
+            if (Array.isArray(serverData.tenants)) {
+              setTenants(serverData.tenants);
+              safeStorage.setItem('stayflow_tenants', serverData.tenants);
+            }
+            if (Array.isArray(serverData.bookings)) {
+              setBookings(serverData.bookings);
+              safeStorage.setItem('stayflow_bookings', serverData.bookings);
+            }
+            if (Array.isArray(serverData.bills)) {
+              setBills(serverData.bills);
+              safeStorage.setItem('stayflow_bills', serverData.bills);
+            }
+          }
+          lastLocalSaveTimestamp.current = Math.max(Date.now(), serverData.updatedAt || 0);
+        } else if (!serverData && isMounted) {
+          // If server has no state yet, seed current local state to server
+          lastLocalSaveTimestamp.current = Date.now();
+          saveServerState({
+            property,
+            utilityConfig,
+            rooms,
+            tenants,
+            bookings,
+            bills,
+            updatedAt: lastLocalSaveTimestamp.current,
+          });
+        }
+      } catch (serverErr) {
+        console.warn('Server sync hydration check:', serverErr);
+      }
     }
 
-    // Subscribe to Supabase Real-Time Broadcast & Postgres Changes Channels
+    initDataHydration();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Debounced auto-save to Server persistence layer
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const now = Date.now();
+      lastLocalSaveTimestamp.current = now;
+      saveServerState({
+        property,
+        utilityConfig,
+        rooms,
+        tenants,
+        bookings,
+        bills,
+        updatedAt: now,
+      });
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [property, utilityConfig, rooms, tenants, bookings, bills]);
+
+  // Periodic polling for multi-device real-time sync via Server API
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const sData = await fetchServerState();
+        if (sData && sData.updatedAt && sData.updatedAt > (lastLocalSaveTimestamp.current + 500)) {
+          lastLocalSaveTimestamp.current = sData.updatedAt;
+          if (Array.isArray(sData.rooms)) {
+            setRooms(sData.rooms);
+            safeStorage.setItem('stayflow_rooms', sData.rooms);
+          }
+          if (Array.isArray(sData.tenants)) {
+            setTenants(sData.tenants);
+            safeStorage.setItem('stayflow_tenants', sData.tenants);
+          }
+          if (Array.isArray(sData.bills)) {
+            setBills(sData.bills);
+            safeStorage.setItem('stayflow_bills', sData.bills);
+          }
+          if (Array.isArray(sData.bookings)) {
+            setBookings(sData.bookings);
+            safeStorage.setItem('stayflow_bookings', sData.bookings);
+          }
+          if (sData.property) {
+            setProperty(sData.property);
+            safeStorage.setItem('stayflow_property', sData.property);
+          }
+          if (sData.utilityConfig) {
+            setUtilityConfig(sData.utilityConfig);
+            safeStorage.setItem('stayflow_utility_config', sData.utilityConfig);
+          }
+        }
+      } catch {
+        // Silent
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Supabase Real-Time Broadcast & Postgres Changes Channels (if configured)
+  useEffect(() => {
     const supabase = getSupabase();
     if (supabase) {
       const channel = supabase.channel('stayflow_live_sync', {
@@ -361,24 +502,38 @@ export default function App() {
   };
 
   const handleDeleteRoom = (roomId: string) => {
-    setRooms(prev => {
-      const updatedRooms = prev.filter(r => r.id !== roomId);
-      notifyRealtimeChange('ROOMS_UPDATE', updatedRooms);
-      saveRoomsToCloud(updatedRooms);
-      return updatedRooms;
+    const updatedRooms = rooms.filter(r => r.id !== roomId);
+    const updatedTenants = tenants.filter(t => t.roomId !== roomId);
+    const updatedBills = bills.filter(b => b.roomId !== roomId);
+
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+
+    setRooms(updatedRooms);
+    setTenants(updatedTenants);
+    setBills(updatedBills);
+
+    safeStorage.setItem('stayflow_rooms', updatedRooms);
+    safeStorage.setItem('stayflow_tenants', updatedTenants);
+    safeStorage.setItem('stayflow_bills', updatedBills);
+
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updatedRooms,
+      tenants: updatedTenants,
+      bookings,
+      bills: updatedBills,
+      updatedAt: now,
     });
-    setTenants(prev => {
-      const updatedTenants = prev.filter(t => t.roomId !== roomId);
-      notifyRealtimeChange('TENANTS_UPDATE', updatedTenants);
-      saveTenantsToCloud(updatedTenants);
-      return updatedTenants;
-    });
-    setBills(prev => {
-      const updatedBills = prev.filter(b => b.roomId !== roomId);
-      notifyRealtimeChange('BILLS_UPDATE', updatedBills);
-      saveBillsToCloud(updatedBills);
-      return updatedBills;
-    });
+
+    notifyRealtimeChange('ROOMS_UPDATE', updatedRooms);
+    notifyRealtimeChange('TENANTS_UPDATE', updatedTenants);
+    notifyRealtimeChange('BILLS_UPDATE', updatedBills);
+
+    deleteRoomFromCloud(roomId);
+    saveTenantsToCloud(updatedTenants);
+    saveBillsToCloud(updatedBills);
   };
 
   // Handlers for Meter update
@@ -421,18 +576,48 @@ export default function App() {
   };
 
   const handleDeleteBill = (billId: string) => {
-    setBills(prev => {
-      const updated = prev.filter(b => b.id !== billId);
-      notifyRealtimeChange('BILLS_UPDATE', updated);
-      saveBillsToCloud(updated);
-      return updated;
+    const updated = bills.filter(b => b.id !== billId);
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+
+    setBills(updated);
+    safeStorage.setItem('stayflow_bills', updated);
+
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms,
+      tenants,
+      bookings,
+      bills: updated,
+      updatedAt: now,
     });
+    deleteBillFromServer(billId);
+
+    notifyRealtimeChange('BILLS_UPDATE', updated);
+    deleteBillFromCloud(billId);
   };
 
   const handleClearBills = () => {
+    const deletedIds = bills.map(b => b.id);
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+
     setBills([]);
+    safeStorage.setItem('stayflow_bills', []);
+
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms,
+      tenants,
+      bookings,
+      bills: [],
+      updatedAt: now,
+    });
+
     notifyRealtimeChange('BILLS_UPDATE', []);
-    saveBillsToCloud([]);
+    clearBillsFromCloud(deletedIds);
   };
 
   const handleResetMeters = () => {
@@ -628,64 +813,145 @@ export default function App() {
   };
 
   const handleDeleteBooking = (bookingId: string) => {
-    setBookings(prev => {
-      const updated = prev.filter(b => b.id !== bookingId);
-      notifyRealtimeChange('BOOKINGS_UPDATE', updated);
-      saveBookingsToCloud(updated);
-      return updated;
+    const bookingToDelete = bookings.find(b => b.id === bookingId);
+    const updated = bookings.filter(b => b.id !== bookingId);
+
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+
+    setBookings(updated);
+    safeStorage.setItem('stayflow_bookings', updated);
+
+    // If the room was reserved for this booking, release the reservation if no other active booking
+    let updatedRooms = rooms;
+    if (bookingToDelete?.roomId) {
+      const remainingForRoom = updated.filter(b => b.roomId === bookingToDelete.roomId);
+      if (remainingForRoom.length === 0) {
+        const roomObj = rooms.find(r => r.id === bookingToDelete.roomId);
+        if (roomObj && roomObj.status === 'reserved') {
+          updatedRooms = rooms.map(r => r.id === bookingToDelete.roomId ? { ...r, status: 'available' as RoomStatus } : r);
+          setRooms(updatedRooms);
+          safeStorage.setItem('stayflow_rooms', updatedRooms);
+          notifyRealtimeChange('ROOMS_UPDATE', updatedRooms);
+          saveRoomsToCloud(updatedRooms);
+        }
+      }
+    }
+
+    // Save to server sync immediately
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updatedRooms,
+      tenants,
+      bookings: updated,
+      bills,
+      updatedAt: now,
     });
+    deleteBookingFromServer(bookingId);
+
+    notifyRealtimeChange('BOOKINGS_UPDATE', updated);
+    deleteBookingFromCloud(bookingId);
   };
 
   const handleClearBookings = (mode: 'all' | 'paid_cancelled') => {
-    setBookings(prev => {
-      let updated: Booking[];
-      if (mode === 'all') {
-        updated = [];
-      } else {
-        updated = prev.filter(b => b.paymentStatus === 'pending');
-      }
-      notifyRealtimeChange('BOOKINGS_UPDATE', updated);
-      saveBookingsToCloud(updated);
-      return updated;
+    let updated: Booking[];
+    let deletedIds: string[] = [];
+    if (mode === 'all') {
+      deletedIds = bookings.map(b => b.id);
+      updated = [];
+    } else {
+      deletedIds = bookings.filter(b => b.paymentStatus !== 'pending').map(b => b.id);
+      updated = bookings.filter(b => b.paymentStatus === 'pending');
+    }
+
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+
+    setBookings(updated);
+    safeStorage.setItem('stayflow_bookings', updated);
+
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms,
+      tenants,
+      bookings: updated,
+      bills,
+      updatedAt: now,
     });
+    clearBookingsFromServer(mode);
+
+    notifyRealtimeChange('BOOKINGS_UPDATE', updated);
+    clearBookingsFromCloud(deletedIds);
   };
 
   const handleDeleteTenant = (tenantId: string, roomId: string) => {
-    setTenants(prev => {
-      const updated = prev.filter(t => t.id !== tenantId);
-      notifyRealtimeChange('TENANTS_UPDATE', updated);
-      saveTenantsToCloud(updated);
-      return updated;
+    const updatedTenants = tenants.filter(t => t.id !== tenantId);
+    const updatedRooms = rooms.map(r => r.id === roomId ? {
+      ...r,
+      status: 'available' as RoomStatus,
+      currentTenant: undefined,
+    } : r);
+
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+
+    setTenants(updatedTenants);
+    setRooms(updatedRooms);
+    safeStorage.setItem('stayflow_tenants', updatedTenants);
+    safeStorage.setItem('stayflow_rooms', updatedRooms);
+
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updatedRooms,
+      tenants: updatedTenants,
+      bookings,
+      bills,
+      updatedAt: now,
     });
-    setRooms(prev => {
-      const updated = prev.map(r => r.id === roomId ? {
-        ...r,
-        status: 'available' as RoomStatus,
-        currentTenant: undefined,
-      } : r);
-      notifyRealtimeChange('ROOMS_UPDATE', updated);
-      saveRoomsToCloud(updated);
-      return updated;
-    });
+    deleteTenantFromServer(tenantId);
+
+    notifyRealtimeChange('TENANTS_UPDATE', updatedTenants);
+    notifyRealtimeChange('ROOMS_UPDATE', updatedRooms);
+
+    deleteTenantFromCloud(tenantId);
+    saveRoomsToCloud(updatedRooms);
   };
 
   const handleCheckOutTenant = (tenantId: string, roomId: string) => {
-    setTenants(prev => {
-      const updated = prev.filter(t => t.id !== tenantId);
-      notifyRealtimeChange('TENANTS_UPDATE', updated);
-      saveTenantsToCloud(updated);
-      return updated;
+    const updatedTenants = tenants.filter(t => t.id !== tenantId);
+    const updatedRooms = rooms.map(r => r.id === roomId ? {
+      ...r,
+      status: 'cleaning' as RoomStatus,
+      currentTenant: undefined,
+    } : r);
+
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+
+    setTenants(updatedTenants);
+    setRooms(updatedRooms);
+    safeStorage.setItem('stayflow_tenants', updatedTenants);
+    safeStorage.setItem('stayflow_rooms', updatedRooms);
+
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updatedRooms,
+      tenants: updatedTenants,
+      bookings,
+      bills,
+      updatedAt: now,
     });
-    setRooms(prev => {
-      const updated = prev.map(r => r.id === roomId ? {
-        ...r,
-        status: 'cleaning' as RoomStatus,
-        currentTenant: undefined,
-      } : r);
-      notifyRealtimeChange('ROOMS_UPDATE', updated);
-      saveRoomsToCloud(updated);
-      return updated;
-    });
+    deleteTenantFromServer(tenantId);
+
+    notifyRealtimeChange('TENANTS_UPDATE', updatedTenants);
+    notifyRealtimeChange('ROOMS_UPDATE', updatedRooms);
+
+    deleteTenantFromCloud(tenantId);
+    saveRoomsToCloud(updatedRooms);
   };
 
   const handleUpdateBookingStatus = (bookingId: string, status: 'paid' | 'pending' | 'cancelled') => {

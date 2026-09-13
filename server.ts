@@ -1,12 +1,147 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '15mb' }));
+
+// -------------------------------------------------------------
+// Server-Side Data Persistence & Real-time Sync Engine
+// (Ensures data syncs across devices/tabs even if Supabase free quota is exceeded)
+// -------------------------------------------------------------
+const DATA_DIR = path.join(process.cwd(), 'data');
+const STATE_FILE = path.join(DATA_DIR, 'dorm_state.json');
+
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('Failed to ensure data dir:', e);
+}
+
+let inMemoryState: any = null;
+try {
+  if (fs.existsSync(STATE_FILE)) {
+    const raw = fs.readFileSync(STATE_FILE, 'utf-8');
+    if (raw) inMemoryState = JSON.parse(raw);
+  }
+} catch (e) {
+  console.warn('Could not load saved state from disk:', e);
+}
+
+app.get('/api/sync/state', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    data: inMemoryState,
+    updatedAt: inMemoryState?.updatedAt || null,
+    serverTime: Date.now()
+  });
+});
+
+app.post('/api/sync/state', (req: Request, res: Response) => {
+  try {
+    const payload = req.body;
+    if (!payload || typeof payload !== 'object') {
+      res.status(400).json({ success: false, error: 'Invalid payload' });
+      return;
+    }
+    const updatedAt = Date.now();
+    inMemoryState = {
+      ...inMemoryState,
+      ...payload,
+      updatedAt
+    };
+    try {
+      fs.writeFileSync(STATE_FILE, JSON.stringify(inMemoryState, null, 2), 'utf-8');
+    } catch (writeErr) {
+      console.warn('Could not write state to disk:', writeErr);
+    }
+    res.json({ success: true, updatedAt });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/sync/booking/:id', (req: Request, res: Response) => {
+  try {
+    const bookingId = req.params.id;
+    if (inMemoryState && Array.isArray(inMemoryState.bookings)) {
+      inMemoryState.bookings = inMemoryState.bookings.filter((b: any) => b.id !== bookingId);
+      inMemoryState.updatedAt = Date.now();
+      try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify(inMemoryState, null, 2), 'utf-8');
+      } catch (e) {
+        console.warn('Write error:', e);
+      }
+    }
+    res.json({ success: true, updatedAt: inMemoryState?.updatedAt || Date.now() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/sync/clear-bookings', (req: Request, res: Response) => {
+  try {
+    const { mode } = req.body || {};
+    if (inMemoryState && Array.isArray(inMemoryState.bookings)) {
+      if (mode === 'all') {
+        inMemoryState.bookings = [];
+      } else {
+        inMemoryState.bookings = inMemoryState.bookings.filter((b: any) => b.paymentStatus === 'pending');
+      }
+      inMemoryState.updatedAt = Date.now();
+      try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify(inMemoryState, null, 2), 'utf-8');
+      } catch (e) {
+        console.warn('Write error:', e);
+      }
+    }
+    res.json({ success: true, updatedAt: inMemoryState?.updatedAt || Date.now() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/sync/tenant/:id', (req: Request, res: Response) => {
+  try {
+    const tenantId = req.params.id;
+    if (inMemoryState && Array.isArray(inMemoryState.tenants)) {
+      inMemoryState.tenants = inMemoryState.tenants.filter((t: any) => t.id !== tenantId);
+      inMemoryState.updatedAt = Date.now();
+      try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify(inMemoryState, null, 2), 'utf-8');
+      } catch (e) {
+        console.warn('Write error:', e);
+      }
+    }
+    res.json({ success: true, updatedAt: inMemoryState?.updatedAt || Date.now() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/sync/bill/:id', (req: Request, res: Response) => {
+  try {
+    const billId = req.params.id;
+    if (inMemoryState && Array.isArray(inMemoryState.bills)) {
+      inMemoryState.bills = inMemoryState.bills.filter((b: any) => b.id !== billId);
+      inMemoryState.updatedAt = Date.now();
+      try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify(inMemoryState, null, 2), 'utf-8');
+      } catch (e) {
+        console.warn('Write error:', e);
+      }
+    }
+    res.json({ success: true, updatedAt: inMemoryState?.updatedAt || Date.now() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // Default LINE Channel Access Token provided by user
 const DEFAULT_LINE_TOKEN = 
