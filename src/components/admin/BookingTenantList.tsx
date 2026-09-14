@@ -84,6 +84,20 @@ export const BookingTenantList: React.FC<BookingTenantListProps> = ({
   const handleCreateBooking = () => {
     if (!formData.guestName || !selectedRoom) return;
 
+    const avail = isRoomAvailableForDates(
+      selectedRoom,
+      formData.rentalType,
+      formData.checkInDate,
+      formData.checkOutDate,
+      formData.durationUnits,
+      bookings,
+      tenants
+    );
+    if (!avail.available) {
+      alert(`⚠️ ไม่สามารถจองห้องพักได้: ห้อง ${selectedRoom.number} ${avail.reason || 'ไม่ว่าง'}`);
+      return;
+    }
+
     const total = calculateTotal();
     const newBooking: Booking = {
       id: `book-${Date.now()}`,
@@ -512,7 +526,8 @@ export const BookingTenantList: React.FC<BookingTenantListProps> = ({
                               formData.checkInDate,
                               formData.checkOutDate,
                               formData.durationUnits,
-                              bookings
+                              bookings,
+                              tenants
                             );
                             return (
                               <option key={r.id} value={r.id}>
@@ -521,11 +536,11 @@ export const BookingTenantList: React.FC<BookingTenantListProps> = ({
                             );
                           })}
                         </select>
-                        {selectedRoom && !isRoomAvailableForDates(selectedRoom, formData.rentalType, formData.checkInDate, formData.checkOutDate, formData.durationUnits, bookings).available && (
+                        {selectedRoom && !isRoomAvailableForDates(selectedRoom, formData.rentalType, formData.checkInDate, formData.checkOutDate, formData.durationUnits, bookings, tenants).available && (
                           <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-center gap-1.5">
                             <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                             <span>
-                              ห้องนี้ {isRoomAvailableForDates(selectedRoom, formData.rentalType, formData.checkInDate, formData.checkOutDate, formData.durationUnits, bookings).reason || 'ไม่ว่างในช่วงเวลาดังกล่าว'}
+                              ห้องนี้ {isRoomAvailableForDates(selectedRoom, formData.rentalType, formData.checkInDate, formData.checkOutDate, formData.durationUnits, bookings, tenants).reason || 'ไม่ว่างในช่วงเวลาดังกล่าว'}
                             </span>
                           </div>
                         )}

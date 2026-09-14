@@ -8,7 +8,7 @@ import {
   Download, Printer, CheckCircle2, ChevronRight, Info,
   Plus, Minus, Edit3, SlidersHorizontal, Lock, AlertCircle
 } from 'lucide-react';
-import { Room, Booking, PropertyProfile, RentalType } from '../../types';
+import { Room, Booking, PropertyProfile, RentalType, Tenant } from '../../types';
 import { formatCurrency, formatDateThai, addMonthsToDate, addDaysToDate, isRoomAvailableForDates } from '../../utils/formatters';
 import { PromptPayQR } from '../ui/PromptPayQR';
 import { ClientRoomCard } from './ClientRoomCard';
@@ -16,6 +16,7 @@ import { ClientRoomCard } from './ClientRoomCard';
 interface ClientBookingViewProps {
   rooms: Room[];
   bookings?: Booking[];
+  tenants?: Tenant[];
   property: PropertyProfile;
   onCompleteBooking: (booking: Booking) => void;
 }
@@ -23,6 +24,7 @@ interface ClientBookingViewProps {
 export const ClientBookingView: React.FC<ClientBookingViewProps> = ({
   rooms,
   bookings = [],
+  tenants = [],
   property,
   onCompleteBooking,
 }) => {
@@ -59,16 +61,47 @@ export const ClientBookingView: React.FC<ClientBookingViewProps> = ({
     return diff > 0 ? diff : 1;
   }, [checkInDate, checkOutDate]);
 
+  // Helper to check if a room is booked or occupied as monthly
+  const isRoomBookedOrOccupiedMonthly = (room: Room) => {
+    const hasMonthlyBooking = (bookings || []).some(
+      (b) =>
+        (b.roomId === room.id || b.roomNumber === room.number) &&
+        b.rentalType === 'monthly' &&
+        b.paymentStatus !== 'cancelled'
+    );
+    const hasMonthlyTenant = (tenants || []).some(
+      (t) =>
+        (t.roomId === room.id || t.roomNumber === room.number) &&
+        t.rentalType === 'monthly' &&
+        t.status !== 'checked_out'
+    );
+    const hasRoomMonthlyTenant =
+      room.currentTenant?.rentalType === 'monthly' ||
+      (room.status === 'occupied' && !room.currentTenant);
+
+    return hasMonthlyBooking || hasMonthlyTenant || hasRoomMonthlyTenant;
+  };
+
   // Compute room availability for each room based on dates and existing bookings
   const evaluatedRooms = useMemo(() => {
     return rooms.map((room) => {
+      // If room is booked monthly and we are in daily view, it is strictly not available for daily
+      if (rentalType === 'daily' && isRoomBookedOrOccupiedMonthly(room)) {
+        return {
+          room,
+          isAvailable: false,
+          unavailableReason: 'ห้องนี้มีผู้จองหรือทำสัญญาเช่าแบบรายเดือนแล้ว',
+        };
+      }
+
       const { available, reason } = isRoomAvailableForDates(
         room,
         rentalType,
         checkInDate,
         checkOutDate,
         monthlyContractMonths,
-        bookings
+        bookings,
+        tenants
       );
       return {
         room,
@@ -76,25 +109,32 @@ export const ClientBookingView: React.FC<ClientBookingViewProps> = ({
         unavailableReason: reason,
       };
     });
-  }, [rooms, rentalType, checkInDate, checkOutDate, monthlyContractMonths, bookings]);
+  }, [rooms, rentalType, checkInDate, checkOutDate, monthlyContractMonths, bookings, tenants]);
 
   // Filter available rooms according to user filter
+  // Rule: ถ้ามีคนจองแบบรายเดือนไปแล้วก็ให้รายวันหายไป
   const displayedRooms = useMemo(() => {
     return evaluatedRooms.filter(({ room, isAvailable }) => {
+      // In daily rental view, rooms booked or occupied as monthly must disappear completely
+      if (rentalType === 'daily' && isRoomBookedOrOccupiedMonthly(room)) {
+        return false;
+      }
+
       if (typeFilter !== 'all' && room.type !== typeFilter) return false;
       if (room.maxGuests < guestCount) return false;
       if (availabilityFilter === 'available' && !isAvailable) return false;
       return true;
     });
-  }, [evaluatedRooms, typeFilter, guestCount, availabilityFilter]);
+  }, [evaluatedRooms, rentalType, typeFilter, guestCount, availabilityFilter, bookings, tenants]);
 
   const availableRoomsCount = useMemo(() => {
     return evaluatedRooms.filter(({ room, isAvailable }) => {
+      if (rentalType === 'daily' && isRoomBookedOrOccupiedMonthly(room)) return false;
       if (typeFilter !== 'all' && room.type !== typeFilter) return false;
       if (room.maxGuests < guestCount) return false;
       return isAvailable;
     }).length;
-  }, [evaluatedRooms, typeFilter, guestCount]);
+  }, [evaluatedRooms, rentalType, typeFilter, guestCount, bookings, tenants]);
 
   // Calculate pricing for a room
   const getRoomPricing = (room: Room) => {
@@ -126,6 +166,11 @@ export const ClientBookingView: React.FC<ClientBookingViewProps> = ({
   };
 
   const handleOpenBooking = (room: Room) => {
+    if (rentalType === 'daily' && isRoomBookedOrOccupiedMonthly(room)) {
+      alert(`⚠️ ขออภัย: ห้อง ${room.number} มีผู้จองหรือทำสัญญาเช่าแบบรายเดือนแล้ว ไม่สามารถจองแบบรายวันได้`);
+      return;
+    }
+
     // Re-verify availability
     const { available, reason } = isRoomAvailableForDates(
       room,
@@ -133,7 +178,8 @@ export const ClientBookingView: React.FC<ClientBookingViewProps> = ({
       checkInDate,
       checkOutDate,
       monthlyContractMonths,
-      bookings
+      bookings,
+      tenants
     );
 
     if (!available) {
@@ -149,6 +195,11 @@ export const ClientBookingView: React.FC<ClientBookingViewProps> = ({
   const handleConfirmReservation = () => {
     if (!selectedRoom || !guestName || !guestPhone) return;
 
+    if (rentalType === 'daily' && isRoomBookedOrOccupiedMonthly(selectedRoom)) {
+      setBookingErrorMessage(`⚠️ ไม่สามารถทำรายการได้: ห้อง ${selectedRoom.number} มีผู้จองหรือทำสัญญาเช่าแบบรายเดือนแล้ว`);
+      return;
+    }
+
     // Check again to avoid double booking
     const { available, reason } = isRoomAvailableForDates(
       selectedRoom,
@@ -156,7 +207,8 @@ export const ClientBookingView: React.FC<ClientBookingViewProps> = ({
       checkInDate,
       checkOutDate,
       monthlyContractMonths,
-      bookings
+      bookings,
+      tenants
     );
 
     if (!available) {

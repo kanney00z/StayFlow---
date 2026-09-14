@@ -109,15 +109,43 @@ export function isRoomAvailableForDates(
   checkInDate: string,
   checkOutDate: string,
   monthlyContractMonths: number,
-  bookings: Array<{ roomId: string; checkInDate: string; checkOutDate: string; paymentStatus?: string; rentalType?: string }>
+  bookings: Array<{ roomId: string; roomNumber?: string; checkInDate: string; checkOutDate: string; paymentStatus?: string; rentalType?: string }>,
+  tenants?: Array<{ roomId?: string; roomNumber?: string; status?: string; rentalType?: string }>
 ): { available: boolean; reason?: string } {
   // 1. Maintenance
   if (room.status === 'maintenance') {
     return { available: false, reason: 'ห้องพักอยู่ระหว่างปิดปรับปรุง' };
   }
 
-  // 2. Active Tenant in room
-  if (room.status === 'occupied' || Boolean(room.currentTenant)) {
+  // 2. If viewing/booking daily, and room has an active monthly booking or monthly tenant
+  // Rule: ถ้ามีคนจองแบบรายเดือนไปแล้ว ห้องนั้นต้องไม่เปิดให้จองรายวัน
+  const hasMonthlyBooking = (bookings || []).some(
+    (b) =>
+      (b.roomId === room.id || (b.roomNumber && b.roomNumber === room.number)) &&
+      b.rentalType === 'monthly' &&
+      b.paymentStatus !== 'cancelled'
+  );
+
+  const hasMonthlyTenant = (tenants || []).some(
+    (t) =>
+      (t.roomId === room.id || (t.roomNumber && t.roomNumber === room.number)) &&
+      t.rentalType === 'monthly' &&
+      t.status !== 'checked_out'
+  );
+
+  const hasRoomMonthlyTenant =
+    room.currentTenant?.rentalType === 'monthly' ||
+    (room.status === 'occupied' && !room.currentTenant);
+
+  if (rentalType === 'daily' && (hasMonthlyBooking || hasMonthlyTenant || hasRoomMonthlyTenant)) {
+    return {
+      available: false,
+      reason: 'ห้องพักนี้มีผู้จอง/ทำสัญญาเช่าแบบรายเดือนแล้ว ไม่เปิดให้จองรายวัน',
+    };
+  }
+
+  // 3. Active Tenant in room
+  if (room.status === 'occupied' || Boolean(room.currentTenant) || hasMonthlyTenant) {
     return { available: false, reason: 'ห้องพักมีผู้เช่าพักอาศัยอยู่แล้ว' };
   }
 
@@ -131,12 +159,22 @@ export function isRoomAvailableForDates(
     return { available: true };
   }
 
-  // 3. Check overlapping bookings for this specific room
+  // 4. Check overlapping bookings for this specific room
   const activeBookings = (bookings || []).filter(
-    (b) => b.roomId === room.id && b.paymentStatus !== 'cancelled'
+    (b) =>
+      (b.roomId === room.id || (b.roomNumber && b.roomNumber === room.number)) &&
+      b.paymentStatus !== 'cancelled'
   );
 
   for (const b of activeBookings) {
+    // If room has ANY monthly booking, daily or monthly overlap check
+    if (b.rentalType === 'monthly' && rentalType === 'daily') {
+      return {
+        available: false,
+        reason: 'ห้องพักนี้มีผู้จองสัญญาเช่ารายเดือนแล้ว',
+      };
+    }
+
     const bStart = b.checkInDate;
     const bEnd = b.checkOutDate;
     // Overlap: reqStart < bEnd && reqEnd > bStart
@@ -150,7 +188,7 @@ export function isRoomAvailableForDates(
     }
   }
 
-  // 4. If status is reserved
+  // 5. If status is reserved
   if (room.status === 'reserved') {
     return { available: false, reason: 'ห้องพักติดจองแล้ว' };
   }

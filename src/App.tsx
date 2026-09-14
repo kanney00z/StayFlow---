@@ -1208,6 +1208,7 @@ export default function App() {
           <ClientBookingView
             rooms={rooms}
             bookings={bookings}
+            tenants={tenants}
             property={property}
             onCompleteBooking={handleAddBooking}
           />
