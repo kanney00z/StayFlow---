@@ -341,10 +341,17 @@ app.post('/api/line/send-bill', async (req: Request, res: Response) => {
     }
 
     if (!response.ok) {
-      const isToInvalid = JSON.stringify(respData).includes("'to'") || JSON.stringify(respData).includes("invalid");
-      const errorMsg = isToInvalid
-        ? `ไอดีผู้รับ "${targetUserId}" ไม่ถูกต้อง: บอท LINE ต้องการ LINE User ID (ขึ้นต้นด้วย U 33 ตัวอักษร) ไม่สามารถใช้ LINE ID ค้นหาเพื่อน (@...) ได้ แนะนำให้ใช้ตัวเลือกเปิดส่งในแอป LINE แทน`
-        : ((respData as any)?.message || 'LINE API returned an error');
+      const respStr = JSON.stringify(respData);
+      const isToInvalid = respStr.includes("'to'") || (Array.isArray((respData as any)?.details) && (respData as any).details.some((d: any) => d.property === 'to'));
+      
+      let errorMsg = (respData as any)?.message || 'LINE API returned an error';
+      if (isToInvalid) {
+        if (targetUserId && (targetUserId.startsWith('@') || targetUserId.length < 30)) {
+          errorMsg = `ไอดีผู้รับ "${targetUserId}" เป็น LINE ID ค้นหาเพื่อนทั่วไป บอทส่งตรงไม่ได้ แนะนำให้เลือก "เปิดส่งในแอป LINE" ด้านบนเพื่อส่งให้ผู้เช่าได้ทันที`;
+        } else {
+          errorMsg = `ไม่สามารถส่งถึง LINE User ID "${targetUserId}" ได้ เนื่องจากผู้ใช้นี้ยังไม่ได้กดเพิ่มเพื่อนกับ LINE Official Account ของหอพัก หรือได้บล็อกบอทไว้ (LINE ไม่อนุญาตให้บอทยิงหาคนที่ไม่ได้เป็นเพื่อน)`;
+        }
+      }
 
       res.status(response.status).json({
         success: false,
@@ -688,7 +695,7 @@ function createBillFlexMessage(bill: any, property: any, customNote?: string) {
                 text: `🏦 ธนาคาร: ${bankName} ${bankAccount} (${property?.bankAccountName || propertyName})`,
                 size: 'xs',
                 color: '#15803D',
-                margin: 'xxs'
+                margin: 'xs'
               }] : [])
             ]
           },

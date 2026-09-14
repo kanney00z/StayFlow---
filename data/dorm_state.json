@@ -79,7 +79,7 @@
       "previousWaterMeter": 0,
       "currentElecMeter": 0,
       "previousElecMeter": 0,
-      "meterLastUpdated": "2026-08-27",
+      "meterLastUpdated": "2026-09-14",
       "images": [
         "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80"
       ],
@@ -265,6 +265,44 @@
   ],
   "bills": [
     {
+      "id": "bill-1789411680514-room-1787767148389-799",
+      "billNumber": "INV-202608-Dev1",
+      "roomId": "room-1787767148389",
+      "roomNumber": "Dev1",
+      "tenantName": "Devaaa",
+      "tenantPhone": "0821062891",
+      "monthYear": "2026-08",
+      "billingDate": "2026-09-14",
+      "dueDate": "2026-09-24",
+      "roomRentAmount": 2500,
+      "prevWaterMeter": 0,
+      "currWaterMeter": 0,
+      "waterUnits": 0,
+      "waterRate": 0,
+      "waterAmount": 0,
+      "prevElecMeter": 0,
+      "currElecMeter": 0,
+      "elecUnits": 0,
+      "elecRate": 10,
+      "elecAmount": 0,
+      "commonFee": 0,
+      "internetFee": 0,
+      "parkingFee": 0,
+      "trashFee": 0,
+      "otherFees": 0,
+      "otherFeesNote": "",
+      "subtotal": 2500,
+      "discount": 0,
+      "grandTotal": 2500,
+      "paymentStatus": "unpaid",
+      "paidAmount": 0,
+      "remainingBalance": 2500,
+      "paidDate": null,
+      "paidMethod": null,
+      "slipImage": null,
+      "attachedContract": null
+    },
+    {
       "id": "bill-1789344324434-room-1787764668520-889",
       "billNumber": "INV-202608-Dev",
       "roomId": "room-1787764668520",
@@ -380,5 +418,5 @@
       }
     }
   ],
-  "updatedAt": 1789388760714
+  "updatedAt": 1789427268168
 }

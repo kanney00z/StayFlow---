@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Send, MessageCircle, Copy, Check, ExternalLink, 
   AlertCircle, AlertTriangle, CheckCircle2, Clock, Sparkles, Building2, 
-  User, CreditCard, ChevronRight, X, Loader2, Share2, Radio, Info
+  User, CreditCard, ChevronRight, X, Loader2, Share2, Radio, Info, FileText
 } from 'lucide-react';
 import { UtilityBill, PropertyProfile } from '../../types';
 import { formatCurrency, formatDateThai } from '../../utils/formatters';
@@ -33,8 +33,11 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
   property,
 }) => {
   const [customNote, setCustomNote] = useState('');
-  const [sendMethod, setSendMethod] = useState<'bot_push' | 'bot_broadcast' | 'line_share'>('line_share');
-  const [targetUserId, setTargetUserId] = useState('');
+  const [activeTab, setActiveTab] = useState<'share' | 'bot'>('share');
+  const [targetUserId, setTargetUserId] = useState(() => {
+    return localStorage.getItem('last_line_user_id') || 'Uf8abfa5a3d0c7e8ef445167e555f3cb7';
+  });
+  const [isBroadcast, setIsBroadcast] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendResult, setSendResult] = useState<{
     success: boolean;
@@ -51,11 +54,13 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
     if (isOpen && bill) {
       setSendResult(null);
       setCustomNote('');
-      setSendMethod('line_share');
       
-      // Default to target from property or saved
-      const defaultTarget = property.lineNotifyTargetId || '';
-      setTargetUserId(defaultTarget);
+      // Default to target from property or saved in storage
+      const savedTarget = localStorage.getItem(`line_uid_${bill.roomNumber}`) || 
+                          localStorage.getItem('last_line_user_id') || 
+                          property.lineNotifyTargetId || 
+                          'Uf8abfa5a3d0c7e8ef445167e555f3cb7';
+      setTargetUserId(savedTarget);
 
       // Load bot status
       setIsLoadingBot(true);
@@ -67,7 +72,7 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
         })
         .finally(() => setIsLoadingBot(false));
     }
-  }, [isOpen, bill?.id]);
+  }, [isOpen, bill?.id, bill?.roomNumber, property.lineNotifyTargetId]);
 
   if (!isOpen || !bill) return null;
 
@@ -76,13 +81,34 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
   const shareUrl = getLineShareUrl(bill, property, customNote);
 
   const handleCopyText = () => {
-    navigator.clipboard.writeText(shareText);
-    setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 2500);
+    try {
+      navigator.clipboard.writeText(shareText);
+      setCopiedText(true);
+      setTimeout(() => setCopiedText(false), 3000);
+    } catch {
+      // Fallback copy using textarea
+      const el = document.createElement('textarea');
+      el.value = shareText;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopiedText(true);
+      setTimeout(() => setCopiedText(false), 3000);
+    }
   };
 
   const handleOpenLineShare = () => {
-    window.open(shareUrl, '_blank', 'noopener,noreferrer');
+    handleCopyText();
+    // Use window.open with fallback
+    try {
+      const win = window.open(shareUrl, '_blank', 'noopener,noreferrer');
+      if (!win) {
+        window.location.href = shareUrl;
+      }
+    } catch {
+      window.location.href = shareUrl;
+    }
   };
 
   const handleSendViaBot = async () => {
@@ -90,7 +116,6 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
     setSendResult(null);
 
     try {
-      const isBroadcast = sendMethod === 'bot_broadcast';
       const target = isBroadcast ? undefined : (targetUserId.trim() || undefined);
 
       // Detect if user entered a standard LINE ID (like @kanney88 or kanney88)
@@ -101,7 +126,7 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
         if (isNotApiId) {
           setSendResult({
             success: false,
-            message: `ไม่สามารถส่งผ่านบอทได้ เนื่องจาก "${target}" เป็น LINE ID (ไอดีค้นหาเพื่อน) ไม่ใช่ LINE User ID ของบอท\n\n💡 บอท LINE ต้องการ User ID ที่ขึ้นต้นด้วย U... (รหัส 33 หลัก) หรือ Group ID\n\n👉 วิธีที่สะดวกที่สุด: สลับไปใช้ตัวเลือกแรก "เปิดส่งในแอป LINE" ด้านบน แล้วกดส่งหาคุณ ${target.replace(/^@/, '')} ได้ทันทีโดยไม่ต้องใช้ User ID ครับ`,
+            message: `ไม่สามารถส่งผ่านบอทได้ เนื่องจาก "${target}" เป็น LINE ID (ไอดีค้นหาเพื่อน) ไม่ใช่ LINE User ID ของบอท\n\n💡 บอท LINE ต้องการ User ID ที่ขึ้นต้นด้วย U... (รหัส 33 หลัก) หรือ Group ID\n\n👉 วิธีที่สะดวกที่สุด: สลับไปที่แท็บ "เปิดแอป LINE / คัดลอกข้อความ" ด้านบน แล้วกดส่งหาคุณ ${target.replace(/^@/, '')} ได้ทันทีโดยไม่ต้องใช้ User ID ครับ`,
             isLineIdError: true
           });
           setIsSending(false);
@@ -117,28 +142,32 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
       });
 
       if (result.success) {
+        if (target) {
+          localStorage.setItem('last_line_user_id', target);
+          localStorage.setItem(`line_uid_${bill.roomNumber}`, target);
+        }
         setSendResult({
           success: true,
           message: isBroadcast 
-            ? 'ส่งแจ้งเตือนแบบ Broadcast ถึงเพื่อนใน LINE Official Account เรียบร้อยแล้ว!'
+            ? 'ส่งแจ้งเตือนแบบ Broadcast ถึงเพื่อนทุกคนใน LINE Official Account เรียบร้อยแล้ว!'
             : (target 
-                ? `ส่งแจ้งเตือนตรงเข้า LINE User ID: ${target} เรียบร้อยแล้ว!` 
-                : 'ตรวจสอบรูปแบบ Flex Message สวยงาม ถูกต้องตามมาตรฐาน LINE 100%! (สามารถเปิดส่งในแอป LINE หรือระบุ User ID)')
+                ? `ส่งแจ้งเตือนการ์ด Flex Message ตรงเข้า LINE ผู้รับ (${target}) สำเร็จเรียบร้อยแล้ว!` 
+                : 'ตรวจสอบและส่งผ่าน LINE Bot สำเร็จเรียบร้อย!')
         });
       } else {
         const rawErr = String(result.details?.message || result.error || '');
         let userFriendlyMsg = result.error || 'ส่งข้อความไม่สำเร็จ กรุณาลองใหม่อีกครั้ง หรือใช้ปุ่มเปิดส่งในแอป LINE';
-        const isToInvalid = rawErr.toLowerCase().includes("'to'") || rawErr.toLowerCase().includes('invalid') || rawErr.includes('The property, \'to\'');
+        const isNotUserId = target && (target.startsWith('@') || target.length < 30);
 
-        if (isToInvalid) {
-          userFriendlyMsg = `ไอดีผู้รับ "${target || ''}" ไม่ถูกต้อง: LINE Messaging API ไม่อนุญาตให้ใช้ LINE ID ทั่วไป (เช่น @...) ในการส่งผ่านบอท\n\nบอทจะรับเฉพาะ 'LINE User ID' (รหัสเฉพาะ 33 หลัก ขึ้นต้นด้วย U...) เท่านั้น\n\n👉 แนะนำ: ให้เลือกหัวข้อ "เปิดส่งในแอป LINE" ด้านบน แล้วกดส่งหาผู้เช่าได้ทันที`;
+        if (isNotUserId && (rawErr.toLowerCase().includes("'to'") || rawErr.includes('The property, \'to\''))) {
+          userFriendlyMsg = `ไอดีผู้รับ "${target || ''}" เป็น LINE ID ค้นหาเพื่อนทั่วไป ไม่ใช่ LINE User ID ของบอท\n\n👉 แนะนำ: ให้สลับไปแท็บ "เปิดแอป LINE / คัดลอกข้อความ" ด้านบน แล้วกดส่งหาผู้เช่าได้ทันทีโดยไม่ต้องใช้ User ID ครับ`;
         }
 
         setSendResult({
           success: false,
           message: userFriendlyMsg,
           details: result.details,
-          isLineIdError: isToInvalid
+          isLineIdError: Boolean(isNotUserId)
         });
       }
     } catch (err: any) {
@@ -370,180 +399,248 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                   />
                 </div>
 
-                {/* Selection of Method */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-800 block">
-                    เลือกวิธีการส่งแจ้งเตือน:
-                  </label>
+                {/* Selection of Method Tabs */}
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('share');
+                        setSendResult(null);
+                      }}
+                      className={`py-2.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        activeTab === 'share'
+                          ? 'bg-white text-emerald-700 shadow-sm border border-emerald-200'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <MessageCircle className="w-4 h-4 text-[#06C755]" />
+                      <span>เปิดแอป LINE / คัดลอก</span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold hidden sm:inline">
+                        ง่ายสุด
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('bot');
+                        setSendResult(null);
+                      }}
+                      className={`py-2.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        activeTab === 'bot'
+                          ? 'bg-white text-indigo-700 shadow-sm border border-indigo-200'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Send className="w-4 h-4 text-indigo-600" />
+                      <span>ส่งผ่าน LINE Bot (Flex Card)</span>
+                    </button>
+                  </div>
 
-                  {/* Option 1: Direct 1-Click LINE App Share */}
-                  <button 
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSendMethod('line_share');
-                    }}
-                    className={`w-full text-left block p-3 rounded-xl border-2 transition-all cursor-pointer ${
-                      sendMethod === 'line_share'
-                        ? 'border-[#06C755] bg-emerald-50/50 shadow-sm ring-1 ring-[#06C755]/20'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                        sendMethod === 'line_share' ? 'border-[#06C755] bg-[#06C755]' : 'border-slate-300 bg-white'
-                      }`}>
-                        {sendMethod === 'line_share' && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                            <Share2 className="w-3.5 h-3.5 text-[#06C755]" />
-                            <span>เปิดส่งในแอป LINE (สะดวกที่สุดสำหรับแชทผู้เช่า)</span>
-                          </span>
-                          <span className="text-[10px] bg-[#06C755] text-white px-2 py-0.5 rounded-full font-bold">
-                            แนะนำ
-                          </span>
+                  {/* TAB 1: LINE App Share & Copy */}
+                  {activeTab === 'share' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="space-y-3"
+                    >
+                      <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-900 space-y-1">
+                        <div className="font-bold flex items-center gap-1.5 text-emerald-950">
+                          <CheckCircle2 className="w-4 h-4 text-[#06C755]" />
+                          <span>วิธีที่สะดวกที่สุด (ไม่ต้องใช้ LINE User ID)</span>
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          แตะปุ่มเดียวเพื่อเปิดแอป LINE ในมือถือหรือคอมพิวเตอร์ แล้วเลือกแชทผู้เช่าส่งได้ทันที ไม่ต้องกรอก User ID
+                        <p className="text-[11px] text-emerald-800 leading-relaxed">
+                          คุณสามารถกด <strong>"คัดลอกข้อความบิล"</strong> แล้วนำไปวาง (Ctrl+V) ในห้องแชท LINE ของผู้เช่าได้ทันที หรือกดปุ่ม <strong>"เปิดแอป LINE"</strong> เพื่อเลือกผู้เช่าส่งได้เลย
                         </p>
                       </div>
-                    </div>
-                  </button>
 
-                  {/* Option 2: Push to Target LINE User ID */}
-                  <button 
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSendMethod('bot_push');
-                    }}
-                    className={`w-full text-left block p-3 rounded-xl border-2 transition-all cursor-pointer ${
-                      sendMethod === 'bot_push'
-                        ? 'border-indigo-500 bg-indigo-50/50 shadow-sm ring-1 ring-indigo-500/20'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                        sendMethod === 'bot_push' ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'
-                      }`}>
-                        {sendMethod === 'bot_push' && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900">
-                            ส่งผ่านบอทไปยัง LINE User ID หรือ Group ID
-                          </span>
-                          <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-medium">
-                            บอทส่งให้
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          ส่งข้อความการ์ด Flex Message ตรงไปยัง User ID (U...) หรือกลุ่มของหอพัก
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* Input for User ID if bot_push selected */}
-                  {sendMethod === 'bot_push' && (
-                    <div className="pl-6 pt-1 space-y-2">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={targetUserId}
-                          onChange={(e) => setTargetUserId(e.target.value)}
-                          placeholder="ระบุ LINE User ID (ขึ้นต้นด้วย U... 33 หลัก) หรือ Group ID (C...)"
-                          className={`w-full bg-white border rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none ${
-                            targetUserId.trim().startsWith('@') || (targetUserId.trim().length > 0 && targetUserId.trim().length < 30 && !targetUserId.trim().startsWith('U') && !targetUserId.trim().startsWith('C'))
-                              ? 'border-amber-400 bg-amber-50/30 focus:border-amber-500'
-                              : 'border-indigo-200 focus:border-indigo-500'
-                          }`}
-                        />
-                      </div>
-
-                      {/* Real-time warning when user types a personal LINE ID like @kanney88 */}
-                      {(targetUserId.trim().startsWith('@') || (targetUserId.trim().length > 0 && targetUserId.trim().length < 30 && !targetUserId.trim().startsWith('U') && !targetUserId.trim().startsWith('C') && !targetUserId.trim().startsWith('R'))) && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -4 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-950 text-xs space-y-2"
+                      {/* Prominent Action Buttons */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <button
+                          type="button"
+                          onClick={handleCopyText}
+                          className="py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 transition-all cursor-pointer"
                         >
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                            <div className="flex-1 text-[11px] leading-relaxed">
-                              <span className="font-bold text-amber-900">
-                                "{targetUserId.trim()}" คือ LINE ID (ค้นหาเพื่อน)
-                              </span>
-                              <p className="text-amber-800 mt-0.5">
-                                บอทของ LINE Messaging API จะรับเฉพาะ <strong>LINE User ID ทางเทคนิค (ขึ้นต้นด้วย U ตามด้วยตัวเลข/ตัวอักษร 32 ตัว)</strong> เท่านั้น LINE ไม่อนุญาตให้บอทส่งข้อความผ่าน LINE ID ค้นหาเพื่อน
-                              </p>
-                            </div>
-                          </div>
-                          <div className="pt-1 flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setSendMethod('line_share')}
-                              className="text-[11px] bg-[#06C755] hover:bg-[#05b34c] text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
-                            >
-                              <Share2 className="w-3.5 h-3.5" />
-                              <span>สลับไป "เปิดส่งในแอป LINE" ให้ผู้เช่าคนนี้เลย (แนะนำ)</span>
-                            </button>
-                          </div>
-                        </motion.div>
-                      )}
+                          {copiedText ? (
+                            <>
+                              <Check className="w-4 h-4 text-white" />
+                              <span>คัดลอกข้อความแล้ว!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4 h-4" />
+                              <span>1. คัดลอกข้อความบิลทันที</span>
+                            </>
+                          )}
+                        </button>
 
-                      <div className="flex items-start gap-1.5 text-[11px] text-slate-500">
-                        <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
-                        <span>
-                          LINE User ID ต้องขึ้นต้นด้วยตัว <strong>U</strong> เช่น <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-700 font-mono text-[10px]">U4af49806294868a83d739812543d7890</code> (ไม่ใช่ @LINE ID ทั่วไป)
-                        </span>
+                        <a
+                          href={shareUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={handleCopyText}
+                          className="py-3 px-4 bg-[#06C755] hover:bg-[#05b34c] active:scale-[0.99] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 transition-all cursor-pointer text-center"
+                        >
+                          <Share2 className="w-4 h-4" />
+                          <span>2. เปิดแอป LINE ส่งผู้เช่า</span>
+                          <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                        </a>
                       </div>
-                    </div>
+
+                      {/* Formatted Bill Message Box */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-slate-500" />
+                            <span>ข้อความสรุปใบแจ้งหนี้ที่จะส่ง:</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleCopyText}
+                            className="text-[11px] text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 bg-emerald-100/70 hover:bg-emerald-100 px-2 py-1 rounded cursor-pointer transition-colors"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>{copiedText ? 'คัดลอกแล้ว!' : 'คัดลอกทั้งหมด'}</span>
+                          </button>
+                        </div>
+                        <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-[11px] font-sans text-slate-800 leading-relaxed max-h-44 overflow-y-auto whitespace-pre-wrap select-all">
+                          {shareText}
+                        </div>
+                      </div>
+
+                      {/* Helpful Links */}
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                        <a
+                          href="https://chat.line.biz/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 font-medium"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>เปิดห้องแชท LINE OA (chat.line.biz)</span>
+                        </a>
+                        <span>นำข้อความไปวางส่งในแชทได้ทันที</span>
+                      </div>
+                    </motion.div>
                   )}
 
-                  {/* Option 3: Broadcast to all friends */}
-                  <button 
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setSendMethod('bot_broadcast');
-                    }}
-                    className={`w-full text-left block p-3 rounded-xl border-2 transition-all cursor-pointer ${
-                      sendMethod === 'bot_broadcast'
-                        ? 'border-purple-500 bg-purple-50/50 shadow-sm ring-1 ring-purple-500/20'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                        sendMethod === 'bot_broadcast' ? 'border-purple-600 bg-purple-600' : 'border-slate-300 bg-white'
-                      }`}>
-                        {sendMethod === 'bot_broadcast' && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                        )}
+                  {/* TAB 2: LINE Bot Automated Sending */}
+                  {activeTab === 'bot' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="space-y-3"
+                    >
+                      {/* Sub-choice: Push vs Broadcast */}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsBroadcast(false)}
+                          className={`flex-1 p-2.5 rounded-xl border text-left text-xs cursor-pointer transition-all ${
+                            !isBroadcast
+                              ? 'border-indigo-500 bg-indigo-50/60 font-bold text-indigo-900'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <div>ส่งตรงหาผู้เช่าห้องนี้ (Push)</div>
+                          <div className="text-[10px] text-slate-500 font-normal">ส่งเฉพาะห้อง {bill.roomNumber}</div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsBroadcast(true)}
+                          className={`flex-1 p-2.5 rounded-xl border text-left text-xs cursor-pointer transition-all ${
+                            isBroadcast
+                              ? 'border-indigo-500 bg-indigo-50/60 font-bold text-indigo-900'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          <div>Broadcast เพื่อนทุกคน</div>
+                          <div className="text-[10px] text-slate-500 font-normal">ส่งหาทุกคนใน LINE OA</div>
+                        </button>
                       </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900">
-                            ส่งแบบ Broadcast ให้ผู้เช่าทุกคนที่เป็นเพื่อนกับบอท
-                          </span>
-                          <span className="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-medium">
-                            ทุกคนใน LINE OA
-                          </span>
+
+                      {/* User ID Field if not broadcast */}
+                      {!isBroadcast && (
+                        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-slate-800">
+                              LINE User ID ของผู้เช่า:
+                            </label>
+                            {targetUserId && targetUserId !== 'Uf8abfa5a3d0c7e8ef445167e555f3cb7' && (
+                              <button
+                                type="button"
+                                onClick={() => setTargetUserId('Uf8abfa5a3d0c7e8ef445167e555f3cb7')}
+                                className="text-[10px] text-indigo-600 hover:underline font-semibold"
+                              >
+                                ใช้รหัส Uf8abfa5...
+                              </button>
+                            )}
+                          </div>
+                          <input
+                            type="text"
+                            value={targetUserId}
+                            onChange={(e) => setTargetUserId(e.target.value)}
+                            placeholder="ระบุ LINE User ID (ขึ้นต้นด้วย U... 33 หลัก)"
+                            className={`w-full bg-white border rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none ${
+                              targetUserId.trim().startsWith('@') || (targetUserId.trim().length > 0 && targetUserId.trim().length < 30 && !targetUserId.trim().startsWith('U') && !targetUserId.trim().startsWith('C'))
+                                ? 'border-amber-400 bg-amber-50/30 focus:border-amber-500'
+                                : 'border-indigo-200 focus:border-indigo-500'
+                            }`}
+                          />
+
+                          {/* Friendly hint when user types personal LINE ID */}
+                          {(targetUserId.trim().startsWith('@') || (targetUserId.trim().length > 0 && targetUserId.trim().length < 30 && !targetUserId.trim().startsWith('U') && !targetUserId.trim().startsWith('C') && !targetUserId.trim().startsWith('R'))) && (
+                            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs space-y-1.5">
+                              <div className="font-bold flex items-center gap-1 text-amber-950">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                <span>"{targetUserId.trim()}" คือ LINE ID ค้นหาเพื่อนทั่วไป</span>
+                              </div>
+                              <p className="text-[11px] text-amber-800 leading-relaxed">
+                                บอท LINE จะรับเฉพาะ <strong>User ID 33 หลัก (ขึ้นต้นด้วย U...)</strong> เท่านั้น
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setActiveTab('share')}
+                                className="text-[11px] bg-[#06C755] hover:bg-[#05b34c] text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer transition-all"
+                              >
+                                <Share2 className="w-3.5 h-3.5" />
+                                <span>สลับไปใช้แท็บ "เปิดแอป LINE / คัดลอก" ส่งได้ทันที</span>
+                              </button>
+                            </div>
+                          )}
+
+                          <p className="text-[11px] text-slate-500 flex items-center gap-1">
+                            <Info className="w-3 h-3 text-indigo-500" />
+                            <span>บอทจะส่งการ์ด Flex Message สวยงามตรงเข้าแชทผู้เช่าทันที</span>
+                          </p>
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          ส่งไปยังทุกคนที่กดติดตาม/เป็นเพื่อนกับ LINE OA {DEFAULT_LINE_BOT_BASIC_ID}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
+                      )}
+
+                      {/* Main Send Button for Bot */}
+                      <button
+                        type="button"
+                        onClick={handleSendViaBot}
+                        disabled={isSending}
+                        className="w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 disabled:opacity-75 active:scale-[0.99] text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/20 transition-all cursor-pointer"
+                      >
+                        {isSending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>กำลังส่งข้อความผ่าน LINE Bot...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4" />
+                            <span>
+                              {isBroadcast 
+                                ? 'ส่ง Broadcast ถึงเพื่อนทุกคนใน LINE OA' 
+                                : 'ส่งการ์ดแจ้งหนี้ผ่าน LINE Bot ทันที'}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </motion.div>
+                  )}
                 </div>
 
                 {/* Send Result Banner */}
@@ -573,77 +670,19 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              setSendMethod('line_share');
-                              handleOpenLineShare();
+                              setActiveTab('share');
+                              handleCopyText();
                             }}
                             className="px-3.5 py-2 bg-[#06C755] hover:bg-[#05b34c] text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                           >
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            <span>เปิดแอป LINE ส่งให้ผู้เช่าคนนี้เลยทันที</span>
-                            <ExternalLink className="w-3 h-3 opacity-75" />
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>สลับไปคัดลอกข้อความส่งให้ผู้เช่าเลยทันที</span>
                           </button>
                         </div>
                       )}
                     </div>
                   </motion.div>
                 )}
-
-                {/* Main Action Buttons */}
-                <div className="pt-2 space-y-2">
-                  {sendMethod === 'line_share' ? (
-                    <button
-                      type="button"
-                      onClick={handleOpenLineShare}
-                      className="w-full py-3 bg-[#06C755] hover:bg-[#05b34c] active:scale-[0.99] text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/20 transition-all cursor-pointer"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      <span>เปิดแอป LINE ส่งแจ้งเตือนผู้เช่า</span>
-                      <ExternalLink className="w-3.5 h-3.5 opacity-75" />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleSendViaBot}
-                      disabled={isSending}
-                      className="w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 disabled:opacity-75 active:scale-[0.99] text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/20 transition-all cursor-pointer"
-                    >
-                      {isSending ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>กำลังส่งข้อความผ่าน LINE Bot...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4" />
-                          <span>
-                            {sendMethod === 'bot_broadcast' 
-                              ? 'ส่ง Broadcast ผ่าน LINE Bot ทันที' 
-                              : 'ส่งข้อความผ่าน LINE Bot ทันที'}
-                          </span>
-                        </>
-                      )}
-                    </button>
-                  )}
-
-                  {/* Secondary Copy Button */}
-                  <button
-                    type="button"
-                    onClick={handleCopyText}
-                    className="w-full py-2.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    {copiedText ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="text-emerald-700 font-bold">คัดลอกข้อความสรุปเรียบร้อย!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5 text-slate-500" />
-                        <span>คัดลอกข้อความสรุปสำหรับนำไปวางในแชท</span>
-                      </>
-                    )}
-                  </button>
-                </div>
               </div>
             </div>
           </div>
