@@ -49,6 +49,7 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
     if (isOpen && bill) {
       setSendResult(null);
       setCustomNote('');
+      setSendMethod('line_share');
       
       // Default to target from property or saved
       const defaultTarget = property.lineNotifyTargetId || '';
@@ -60,13 +61,11 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
         .then((res) => {
           if (res.success && res.bot) {
             setBotInfo(res.bot);
-            // Default to bot send if connected and target or broadcast
-            setSendMethod('line_share'); // safe default that works for 100% of cases
           }
         })
         .finally(() => setIsLoadingBot(false));
     }
-  }, [isOpen, bill, property]);
+  }, [isOpen, bill?.id]);
 
   if (!isOpen || !bill) return null;
 
@@ -127,12 +126,12 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto bg-slate-950/75 backdrop-blur-sm">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-sm overflow-hidden">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl max-w-4xl w-full border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[92vh]"
+          className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl max-w-4xl w-full border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[90vh]"
         >
           {/* Header */}
           <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-5 sm:px-6 py-4 text-white flex items-center justify-between border-b border-slate-700/60 shrink-0">
@@ -348,22 +347,26 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                   </label>
 
                   {/* Option 1: Direct 1-Click LINE App Share */}
-                  <label 
-                    onClick={() => setSendMethod('line_share')}
-                    className={`block p-3 rounded-xl border-2 transition-all cursor-pointer ${
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSendMethod('line_share');
+                    }}
+                    className={`w-full text-left block p-3 rounded-xl border-2 transition-all cursor-pointer ${
                       sendMethod === 'line_share'
-                        ? 'border-[#06C755] bg-emerald-50/40 shadow-sm'
+                        ? 'border-[#06C755] bg-emerald-50/50 shadow-sm ring-1 ring-[#06C755]/20'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <input 
-                        type="radio" 
-                        name="sendMethod" 
-                        checked={sendMethod === 'line_share'}
-                        onChange={() => setSendMethod('line_share')}
-                        className="mt-1 text-[#06C755] focus:ring-[#06C755]"
-                      />
+                      <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                        sendMethod === 'line_share' ? 'border-[#06C755] bg-[#06C755]' : 'border-slate-300 bg-white'
+                      }`}>
+                        {sendMethod === 'line_share' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -379,25 +382,29 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                         </p>
                       </div>
                     </div>
-                  </label>
+                  </button>
 
                   {/* Option 2: Push to Target LINE User ID */}
-                  <label 
-                    onClick={() => setSendMethod('bot_push')}
-                    className={`block p-3 rounded-xl border-2 transition-all cursor-pointer ${
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSendMethod('bot_push');
+                    }}
+                    className={`w-full text-left block p-3 rounded-xl border-2 transition-all cursor-pointer ${
                       sendMethod === 'bot_push'
-                        ? 'border-indigo-500 bg-indigo-50/40 shadow-sm'
+                        ? 'border-indigo-500 bg-indigo-50/50 shadow-sm ring-1 ring-indigo-500/20'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <input 
-                        type="radio" 
-                        name="sendMethod" 
-                        checked={sendMethod === 'bot_push'}
-                        onChange={() => setSendMethod('bot_push')}
-                        className="mt-1 text-indigo-600 focus:ring-indigo-500"
-                      />
+                      <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                        sendMethod === 'bot_push' ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'
+                      }`}>
+                        {sendMethod === 'bot_push' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-900">
@@ -412,7 +419,7 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                         </p>
                       </div>
                     </div>
-                  </label>
+                  </button>
 
                   {/* Input for User ID if bot_push selected */}
                   {sendMethod === 'bot_push' && (
@@ -431,22 +438,26 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                   )}
 
                   {/* Option 3: Broadcast to all friends */}
-                  <label 
-                    onClick={() => setSendMethod('bot_broadcast')}
-                    className={`block p-3 rounded-xl border-2 transition-all cursor-pointer ${
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSendMethod('bot_broadcast');
+                    }}
+                    className={`w-full text-left block p-3 rounded-xl border-2 transition-all cursor-pointer ${
                       sendMethod === 'bot_broadcast'
-                        ? 'border-purple-500 bg-purple-50/40 shadow-sm'
+                        ? 'border-purple-500 bg-purple-50/50 shadow-sm ring-1 ring-purple-500/20'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <input 
-                        type="radio" 
-                        name="sendMethod" 
-                        checked={sendMethod === 'bot_broadcast'}
-                        onChange={() => setSendMethod('bot_broadcast')}
-                        className="mt-1 text-purple-600 focus:ring-purple-500"
-                      />
+                      <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                        sendMethod === 'bot_broadcast' ? 'border-purple-600 bg-purple-600' : 'border-slate-300 bg-white'
+                      }`}>
+                        {sendMethod === 'bot_broadcast' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                        )}
+                      </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-slate-900">
@@ -461,7 +472,7 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                         </p>
                       </div>
                     </div>
-                  </label>
+                  </button>
                 </div>
 
                 {/* Send Result Banner */}
