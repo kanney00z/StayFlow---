@@ -11,6 +11,7 @@ import {
 import { Room, Booking, PropertyProfile, RentalType, Tenant } from '../../types';
 import { formatCurrency, formatDateThai, addMonthsToDate, addDaysToDate, isRoomAvailableForDates } from '../../utils/formatters';
 import { PromptPayQR } from '../ui/PromptPayQR';
+import { BankLogo } from '../ui/BankLogo';
 import { ClientRoomCard } from './ClientRoomCard';
 
 interface ClientBookingViewProps {
@@ -775,6 +776,27 @@ export const ClientBookingView: React.FC<ClientBookingViewProps> = ({
                 </div>
               </div>
 
+              {/* Bank Account Info */}
+              {property.bankName && (
+                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <BankLogo bank={property.bankName} size="md" />
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 truncate">{property.bankName}</div>
+                      <div className="font-mono text-slate-600 text-[11px]">
+                        เลขที่บัญชี: <span className="font-bold text-slate-900">{property.bankAccount || '-'}</span> ({property.bankAccountName || property.name})
+                      </div>
+                    </div>
+                  </div>
+                  {property.promptPayId && (
+                    <div className="text-right shrink-0 text-[11px] bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-xl border border-indigo-100">
+                      <div className="text-[10px] text-indigo-500 font-medium">พร้อมเพย์</div>
+                      <div className="font-mono font-bold">{property.promptPayId}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Payment Preview */}
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="text-xs space-y-1">
@@ -853,6 +875,16 @@ export const ClientBookingView: React.FC<ClientBookingViewProps> = ({
                     <span>ยอดรวมชำระ:</span>
                     <span className="font-mono">{formatCurrency(showConfirmationSlip.totalAmount)}</span>
                   </div>
+
+                  {property.bankName && (
+                    <div className="pt-2 border-t border-slate-200/70 flex items-center justify-between text-[11px] text-slate-600">
+                      <div className="flex items-center gap-1.5">
+                        <BankLogo bank={property.bankName} size="xs" />
+                        <span>{property.bankName}</span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-800">{property.bankAccount}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

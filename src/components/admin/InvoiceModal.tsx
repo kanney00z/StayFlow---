@@ -14,6 +14,8 @@ import { fileToBase64, generateSampleSlip } from '../../utils/slipHelpers';
 import { LeaseContractSection } from './LeaseContractSection';
 import { printHtmlContent, generateInvoiceHtml, downloadHtmlFile } from '../../utils/printHelpers';
 import { LineBillNotifyModal } from './LineBillNotifyModal';
+import { BankLogo } from '../ui/BankLogo';
+import { BankSelector } from '../ui/BankSelector';
 
 interface InvoiceModalProps {
   bill: UtilityBill | null;
@@ -66,6 +68,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   // Payment Form States
   const [paidAmountInput, setPaidAmountInput] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<string>('โอนเงินผ่านธนาคาร');
+  const [paymentBank, setPaymentBank] = useState<string>(property.bankName || 'ธนาคารกสิกรไทย (KBANK)');
   const [paidDateTime, setPaidDateTime] = useState<string>('');
   const [slipImage, setSlipImage] = useState<string | undefined>(undefined);
   const [slipReference, setSlipReference] = useState<string>('');
@@ -80,7 +83,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
         : (bill.paymentStatus === 'paid' ? bill.grandTotal : 0);
       
       setPaidAmountInput(initialPaid);
-      setPaymentMethod(bill.paidMethod || 'โอนเงินผ่านธนาคาร');
+      setPaymentMethod(bill.paidMethod ? (bill.paidMethod.startsWith('โอนเงินผ่าน') ? 'โอนเงินผ่านธนาคาร' : bill.paidMethod) : 'โอนเงินผ่านธนาคาร');
+      setPaymentBank(property.bankName || 'ธนาคารกสิกรไทย (KBANK)');
       setPaidDateTime(bill.paidDate || new Date().toISOString().replace('T', ' ').slice(0, 16));
       setSlipImage(bill.slipImage);
       setSlipReference(bill.slipReference || '');
@@ -88,7 +92,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       setShowQR(false);
       setSaveSuccessMsg(null);
     }
-  }, [bill, isOpen]);
+  }, [bill, isOpen, property.bankName]);
 
   if (!isOpen || !bill) return null;
 
@@ -217,12 +221,16 @@ ${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${for
 
   const handleSavePayment = () => {
     const newStatus = calculatedStatus;
+    const finalPaidMethod = paymentMethod === 'โอนเงินผ่านธนาคาร' && paymentBank
+      ? `โอนเงินผ่าน${paymentBank}`
+      : paymentMethod;
+
     const paymentData = {
       paymentStatus: newStatus,
       paidAmount: paidAmountInput,
       remainingBalance,
       paidDate: paidAmountInput > 0 ? paidDateTime : undefined,
-      paidMethod: paidAmountInput > 0 ? paymentMethod : undefined,
+      paidMethod: paidAmountInput > 0 ? finalPaidMethod : undefined,
       slipImage,
       slipDate: slipImage ? paidDateTime : undefined,
       slipReference,
@@ -646,7 +654,11 @@ ${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${for
                     <div className="mt-6 border-t-2 border-slate-800 pt-4 flex flex-col sm:flex-row justify-between items-start gap-6">
                       <div className="text-xs text-slate-500 space-y-1.5 max-w-sm">
                         <p className="font-bold text-slate-700">ช่องทางการชำระเงิน:</p>
-                        <p>• ธนาคาร: <span className="font-semibold text-slate-800">{property.bankName}</span></p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>• ธนาคาร:</span>
+                          <BankLogo bank={property.bankName} size="xs" />
+                          <span className="font-semibold text-slate-800">{property.bankName}</span>
+                        </div>
                         <p>• เลขที่บัญชี: <span className="font-mono font-bold text-slate-900">{property.bankAccount}</span> ({property.bankAccountName})</p>
                         <p>• พร้อมเพย์: <span className="font-mono font-bold text-slate-900">{property.promptPayId}</span> ({property.promptPayName})</p>
                         
@@ -656,7 +668,11 @@ ${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${for
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               <span>บันทึกการชำระเงินเรียบร้อย</span>
                             </div>
-                            <div>รับชำระแล้ว: <strong className="font-mono">{formatCurrency(bill.paidAmount)}</strong> ({bill.paidMethod || 'โอนเงิน'})</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>รับชำระแล้ว: <strong className="font-mono">{formatCurrency(bill.paidAmount)}</strong></span>
+                              <span>({bill.paidMethod || 'โอนเงิน'})</span>
+                              {bill.paidMethod && <BankLogo bank={bill.paidMethod} size="xs" />}
+                            </div>
                             {bill.slipImage && <div className="text-[11px] text-emerald-700">📸 มีหลักฐานสลิปการโอนแนบในระบบ</div>}
                           </div>
                         )}
@@ -776,6 +792,17 @@ ${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${for
                           <option value="บัตรเครดิต/เดบิต">บัตรเครดิต / เดบิต</option>
                         </select>
                       </div>
+
+                      {paymentMethod === 'โอนเงินผ่านธนาคาร' && (
+                        <div className="bg-slate-900/60 p-3 rounded-2xl border border-slate-700/70 space-y-2">
+                          <BankSelector
+                            label="เลือกธนาคารของรายการนี้ (มีรูปแสดงค่าย)"
+                            value={paymentBank}
+                            onChange={(selected) => setPaymentBank(selected)}
+                            className="text-slate-200"
+                          />
+                        </div>
+                      )}
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -948,6 +975,8 @@ ${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${for
                     amount={bill.grandTotal}
                     promptPayId={property.promptPayId}
                     accountName={property.promptPayName || property.bankAccountName || property.name}
+                    bankName={property.bankName}
+                    bankAccount={property.bankAccount}
                     billNumber={bill.billNumber}
                   />
                 </motion.div>

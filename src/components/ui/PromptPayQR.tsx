@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Check, Copy, ShieldCheck, Download, RefreshCw, AlertCircle } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatters';
 import { generatePromptPayPayload, generatePromptPayQRDataUrl } from '../../utils/promptpay';
+import { BankLogo } from './BankLogo';
 
 interface PromptPayQRProps {
   amount: number;
   promptPayId: string;
   accountName: string;
+  bankName?: string;
+  bankAccount?: string;
   billNumber?: string;
   showDownload?: boolean;
 }
@@ -15,6 +18,8 @@ export const PromptPayQR: React.FC<PromptPayQRProps> = ({
   amount,
   promptPayId,
   accountName,
+  bankName,
+  bankAccount,
   billNumber,
   showDownload = true,
 }) => {
@@ -140,8 +145,27 @@ export const PromptPayQR: React.FC<PromptPayQRProps> = ({
             <span className="text-slate-500">ชื่อบัญชีรับเงิน:</span>
             <span className="font-semibold text-slate-900">{accountName || 'หอพัก/อพาร์ตเมนต์'}</span>
           </div>
+
+          {bankName && (
+            <div className="flex justify-between items-center pt-1 border-t border-slate-200/50">
+              <span className="text-slate-500">ธนาคาร:</span>
+              <div className="flex items-center gap-1.5 font-semibold text-slate-800 text-right">
+                <BankLogo bank={bankName} size="xs" />
+                <span className="truncate max-w-[180px]">{bankName}</span>
+              </div>
+            </div>
+          )}
+
+          {bankAccount && (
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500">เลขที่บัญชี:</span>
+              <span className="font-mono font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                {bankAccount}
+              </span>
+            </div>
+          )}
           
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center pt-1 border-t border-slate-200/50">
             <span className="text-slate-500">เบอร์พร้อมเพย์:</span>
             <div className="flex items-center gap-1.5">
               <span className="font-mono font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">

@@ -8,6 +8,8 @@ import {
 import { PropertyProfile, UtilityRateConfig, Room, Tenant, Booking, UtilityBill } from '../../types';
 import { SupabaseSettingsSection } from './SupabaseSettingsSection';
 import { LineSettingsSection } from './LineSettingsSection';
+import { BankSelector } from '../ui/BankSelector';
+import { BankLogo } from '../ui/BankLogo';
 
 interface AdminSettingsProps {
   property: PropertyProfile;
@@ -280,16 +282,13 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-700 font-semibold block mb-1">
-                  ชื่อธนาคาร
-                </label>
-                <input
-                  type="text"
+                <BankSelector
+                  label="ชื่อธนาคาร (เลือกค่ายธนาคารพร้อมรูป)"
                   value={propForm.bankName}
-                  onChange={(e) => setPropForm({ ...propForm, bankName: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                  onChange={(bankName) => setPropForm({ ...propForm, bankName })}
+                  placeholder="เลือกธนาคาร..."
                 />
               </div>
 
@@ -299,6 +298,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({
                 </label>
                 <input
                   type="text"
+                  placeholder="เช่น 012-3-45678-9"
                   value={propForm.bankAccount}
                   onChange={(e) => setPropForm({ ...propForm, bankAccount: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 font-mono focus:bg-white focus:border-indigo-500 outline-none"

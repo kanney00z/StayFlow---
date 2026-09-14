@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { UtilityBill, PropertyProfile } from '../../types';
 import { formatCurrency, formatDateThai } from '../../utils/formatters';
+import { BankLogo } from '../ui/BankLogo';
 import { 
   sendLineBillReminder, 
   getLineShareText, 
@@ -281,7 +282,10 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                           <div className="font-mono">📲 พร้อมเพย์: {property.promptPayId}</div>
                         )}
                         {property.bankAccount && (
-                          <div>🏦 {property.bankName} {property.bankAccount}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <BankLogo bank={property.bankName} size="xs" />
+                            <span>{property.bankName} {property.bankAccount}</span>
+                          </div>
                         )}
                       </div>
 
