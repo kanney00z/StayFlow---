@@ -92,14 +92,15 @@ async function parseSafeResponse<T = any>(
     }
 
     const trimmed = text.trim();
-    // Check if the response is HTML (such as a 404 page or SPA fallback index.html)
-    if (trimmed.startsWith('<') || trimmed.startsWith('<!DOCTYPE') || trimmed.includes('<html')) {
-      const is404 = res.status === 404;
+    const is404 = res.status === 404 || trimmed.includes('NOT_FOUND') || trimmed.includes('The page could not be found');
+
+    // Check if the response is HTML or 404 routing error (such as a 404 page or SPA fallback index.html or Vercel NOT_FOUND)
+    if (is404 || trimmed.startsWith('<') || trimmed.startsWith('<!DOCTYPE') || trimmed.includes('<html')) {
       return {
         success: false,
         isStaticOrNoBackend: true,
         error: is404
-          ? 'ไม่พบบริการ Backend API (/api/line) บนเซิร์ฟเวอร์นี้ (เช่น กำลังเปิดในโหมด Static Hosting) — แนะนำให้ใช้ปุ่ม "เปิดแอป LINE เพื่อส่งตรง" เพื่อส่งบิลเข้า LINE ได้ 100%'
+          ? 'ไม่พบบริการ Backend API (/api/line) บนโฮสติ้งนี้ — แนะนำให้ใช้ปุ่ม "เปิดแอป LINE เพื่อส่งตรง" หรือรอการดีพลอย Vercel Function ล่าสุด'
           : `เซิร์ฟเวอร์ตอบกลับเป็นหน้าเว็บ HTML (HTTP ${res.status}) แนะนำให้ใช้ปุ่ม "เปิดแอป LINE เพื่อส่งตรง"`
       };
     }
