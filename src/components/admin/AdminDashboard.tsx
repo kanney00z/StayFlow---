@@ -3,49 +3,103 @@ import { motion } from 'motion/react';
 import { 
   Building2, Users, CreditCard, Droplets, Zap, 
   DoorClosed, CheckCircle2, Clock, AlertCircle, ArrowUpRight,
-  TrendingUp, FileText, ChevronRight, Plus, CalendarCheck, BedDouble
+  TrendingUp, FileText, ChevronRight, Plus, CalendarCheck, BedDouble,
+  RefreshCw, Edit3, HelpCircle, Info
 } from 'lucide-react';
-import { Room, Booking, UtilityBill, PropertyProfile } from '../../types';
+import { Room, Booking, UtilityBill, PropertyProfile, Tenant } from '../../types';
 import { formatCurrency, formatDateThai, getStatusBadgeInfo } from '../../utils/formatters';
+import { getRoomOccupant } from '../../utils/tenantResolver';
 import { DueBillsAlertBanner } from './DueBillsAlertBanner';
 import { LineBillNotifyModal } from './LineBillNotifyModal';
+import { RevenueBreakdownModal } from './RevenueBreakdownModal';
 
 interface AdminDashboardProps {
   rooms: Room[];
   bookings: Booking[];
   bills: UtilityBill[];
+  tenants?: Tenant[];
   property: PropertyProfile;
   onNavigateTab: (tab: 'dashboard' | 'rooms' | 'utilities' | 'bookings' | 'settings') => void;
   onSelectRoom: (room: Room) => void;
   onOpenInvoiceModal: (bill: UtilityBill) => void;
   onNewBookingClick: () => void;
+  onUpdateRoomMonthlyRate?: (roomId: string, newRate: number) => void;
+  onRefreshData?: () => Promise<void> | void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   rooms,
   bookings,
   bills,
+  tenants = [],
   property,
   onNavigateTab,
   onSelectRoom,
   onOpenInvoiceModal,
   onNewBookingClick,
+  onUpdateRoomMonthlyRate,
+  onRefreshData,
 }) => {
   const [lineNotifyBill, setLineNotifyBill] = useState<UtilityBill | null>(null);
+  const [showRevenueBreakdown, setShowRevenueBreakdown] = useState<boolean>(false);
+  const [isRefreshingStats, setIsRefreshingStats] = useState<boolean>(false);
+
+  // Resolve occupancy for all rooms so stats are 100% synchronized with tenants & bookings
+  const resolvedRooms = rooms.map(room => {
+    const occupant = getRoomOccupant(room, tenants, bookings);
+    const isOccupied = room.status === 'occupied' || Boolean(occupant);
+    const activeTenant = tenants.find(
+      t => (t.roomId === room.id || t.roomNumber === room.number) && t.status !== 'checked_out'
+    );
+    // Determine rent: prioritize active tenant's monthlyRent if available and > 0, otherwise room.monthlyRate
+    const monthlyRent = (activeTenant && typeof activeTenant.monthlyRent === 'number' && activeTenant.monthlyRent > 0)
+      ? activeTenant.monthlyRent
+      : (room.monthlyRate || 0);
+
+    return {
+      room,
+      occupant,
+      isOccupied,
+      activeTenant,
+      monthlyRent,
+      isDaily: occupant?.rentalType === 'daily',
+    };
+  });
 
   // Calculations for stats
   const totalRooms = rooms.length;
-  const occupiedRooms = rooms.filter(r => r.status === 'occupied').length;
-  const availableRooms = rooms.filter(r => r.status === 'available').length;
+  const occupiedRooms = resolvedRooms.filter(r => r.isOccupied).length;
+  const availableRooms = resolvedRooms.filter(r => !r.isOccupied && r.room.status === 'available').length;
   const reservedRooms = rooms.filter(r => r.status === 'reserved').length;
   const cleaningRooms = rooms.filter(r => r.status === 'cleaning').length;
   const maintenanceRooms = rooms.filter(r => r.status === 'maintenance').length;
   const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0;
 
-  // Revenue calculations
-  const totalMonthlyRentProjected = rooms
-    .filter(r => r.status === 'occupied')
-    .reduce((sum, r) => sum + r.monthlyRate, 0);
+  // Monthly occupied rooms
+  const monthlyOccupiedRooms = resolvedRooms.filter(r => r.isOccupied && !r.isDaily);
+  const totalMonthlyRentProjected = monthlyOccupiedRooms.reduce((sum, r) => sum + r.monthlyRent, 0);
+
+  // Latest bill month paid rent calculation
+  const billMonths = Array.from(new Set(bills.map(b => b.monthYear))).sort().reverse();
+  const latestMonth = billMonths[0] || new Date().toISOString().slice(0, 7);
+  const latestBills = bills.filter(b => b.monthYear === latestMonth);
+  const paidRentBillsAmount = latestBills
+    .filter(b => b.paymentStatus === 'paid')
+    .reduce((sum, b) => sum + (b.roomRentAmount || 0), 0);
+
+  // Data formatted for the breakdown modal
+  const breakdownRoomsData = monthlyOccupiedRooms.map(item => {
+    const matchingBill = latestBills.find(b => b.roomId === item.room.id || b.roomNumber === item.room.number);
+    return {
+      room: item.room,
+      tenantName: item.occupant?.name || item.activeTenant?.name || 'ผู้เช่าห้องพัก',
+      tenantPhone: item.occupant?.phone || item.activeTenant?.phone,
+      monthlyRent: item.monthlyRent,
+      rentalType: (item.occupant?.rentalType || 'monthly') as 'daily' | 'monthly',
+      isPaidThisMonth: matchingBill?.paymentStatus === 'paid',
+      billId: matchingBill?.id,
+    };
+  });
 
   const dailyBookingRevenue = bookings
     .filter(b => b.rentalType === 'daily' && b.paymentStatus === 'paid')
@@ -54,6 +108,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const totalUtilityReceivables = bills.reduce((sum, b) => sum + (b.waterAmount + b.elecAmount), 0);
   const unpaidBills = bills.filter(b => b.paymentStatus === 'unpaid');
   const unpaidAmount = unpaidBills.reduce((sum, b) => sum + b.grandTotal, 0);
+
+  const handleQuickRefresh = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setIsRefreshingStats(true);
+    try {
+      if (onRefreshData) {
+        await onRefreshData();
+      }
+    } finally {
+      setTimeout(() => setIsRefreshingStats(false), 500);
+    }
+  };
 
   // Group rooms by floor
   const floors = Array.from(new Set<number>(rooms.map(r => Number(r.floor)))).sort((a, b) => a - b);
@@ -137,12 +203,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* Metric 2: Monthly Rent Revenue */}
         <motion.div
           whileHover={{ y: -2 }}
-          className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow"
+          onClick={() => setShowRevenueBreakdown(true)}
+          className="bg-white border border-slate-200 hover:border-emerald-300 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer group relative"
         >
           <div className="flex justify-between items-start">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">รายได้ค่าเช่ารายเดือน</span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
-              <CreditCard className="w-5 h-5" />
+            <div>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">รายได้ค่าเช่ารายเดือน</span>
+              <span className="text-[10px] text-emerald-600 font-medium block mt-0.5 group-hover:underline">
+                คลิกดูรายละเอียด / แก้ไขราคา
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleQuickRefresh}
+                title="รีเฟรชและคำนวณตัวเลขใหม่"
+                className="w-7 h-7 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingStats ? 'animate-spin text-emerald-600' : ''}`} />
+              </button>
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 group-hover:bg-emerald-100 transition-colors">
+                <CreditCard className="w-5 h-5" />
+              </div>
             </div>
           </div>
           <div className="mt-3">
@@ -150,9 +232,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {formatCurrency(totalMonthlyRentProjected)}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-3 flex items-center gap-1">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-600" /> จากสัญญาเช่า {occupiedRooms} ห้องที่พักอยู่
-          </p>
+          <div className="mt-2.5 flex items-center justify-between text-xs">
+            <p className="text-slate-500 flex items-center gap-1 truncate">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>จากสัญญาเช่า {monthlyOccupiedRooms.length} ห้องที่พักอยู่</span>
+            </p>
+            {paidRentBillsAmount > 0 && (
+              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shrink-0">
+                เก็บได้แล้ว {formatCurrency(paidRentBillsAmount)}
+              </span>
+            )}
+          </div>
         </motion.div>
 
         {/* Metric 3: Daily Bookings Revenue */}
@@ -247,8 +337,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                   {floorRooms.map((room) => {
-                    const badge = getStatusBadgeInfo(room.status);
-                    const isOccupied = room.status === 'occupied';
+                    const occupant = getRoomOccupant(room, tenants, bookings);
+                    const isOccupied = room.status === 'occupied' || Boolean(occupant);
+                    const badge = getStatusBadgeInfo(isOccupied ? 'occupied' : room.status);
 
                     return (
                       <motion.div
@@ -268,13 +359,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         <div>
-                          {isOccupied && room.currentTenant ? (
+                          {occupant ? (
                             <div className="space-y-0.5">
-                              <p className="text-xs font-medium text-slate-800 truncate">
-                                {room.currentTenant.name}
+                              <p className="text-xs font-semibold text-slate-900 truncate flex items-center gap-1">
+                                <span>{occupant.name}</span>
                               </p>
                               <p className="text-[11px] text-slate-500 font-mono">
-                                ค่าเช่า: {formatCurrency(room.monthlyRate || 0)}
+                                {occupant.rentalType === 'daily' 
+                                  ? `รายวัน ${formatCurrency(room.dailyRate || 0)}/คืน` 
+                                  : `ค่าเช่า: ${formatCurrency(room.monthlyRate || 0)}`}
                               </p>
                             </div>
                           ) : (
@@ -427,6 +520,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         onClose={() => setLineNotifyBill(null)}
         bill={lineNotifyBill}
         property={property}
+      />
+
+      {/* Revenue Breakdown & Quick Edit Modal */}
+      <RevenueBreakdownModal
+        isOpen={showRevenueBreakdown}
+        onClose={() => setShowRevenueBreakdown(false)}
+        rooms={rooms}
+        tenants={tenants}
+        bookings={bookings}
+        bills={bills}
+        totalProjectedRent={totalMonthlyRentProjected}
+        paidRentAmount={paidRentBillsAmount}
+        occupiedRoomsData={breakdownRoomsData}
+        onUpdateRoomMonthlyRate={onUpdateRoomMonthlyRate}
+        onRefreshData={onRefreshData}
+        onNavigateTab={onNavigateTab}
       />
     </div>
   );

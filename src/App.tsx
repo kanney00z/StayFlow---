@@ -13,6 +13,7 @@ import {
   Room, Tenant, Booking, UtilityRateConfig, 
   UtilityBill, PropertyProfile, RoomStatus, LeaseContract 
 } from './types';
+import { getRoomOccupant, reconcileRoomsWithOccupants } from './utils/tenantResolver';
 
 import {
   INITIAL_PROPERTY_PROFILE,
@@ -481,7 +482,35 @@ export default function App() {
   const handleUpdateRoomStatus = (roomId: string, newStatus: RoomStatus) => {
     const now = Date.now();
     lastLocalSaveTimestamp.current = now;
-    const updated = rooms.map(r => r.id === roomId ? { ...r, status: newStatus } : r);
+    const updated = rooms.map(r => {
+      if (r.id === roomId) {
+        if (newStatus === 'available' || newStatus === 'cleaning' || newStatus === 'maintenance') {
+          return { ...r, status: newStatus, currentTenant: undefined };
+        }
+        if (newStatus === 'occupied' && !r.currentTenant) {
+          const occ = getRoomOccupant(r, tenants, bookings);
+          return {
+            ...r,
+            status: newStatus,
+            currentTenant: occ ? {
+              id: occ.id,
+              name: occ.name,
+              phone: occ.phone,
+              rentalType: occ.rentalType,
+              startDate: occ.startDate || new Date().toISOString().split('T')[0],
+            } : {
+              id: `tenant-${r.id}`,
+              name: 'ผู้เช่าห้องพัก',
+              phone: '',
+              rentalType: 'monthly' as const,
+              startDate: new Date().toISOString().split('T')[0],
+            }
+          };
+        }
+        return { ...r, status: newStatus };
+      }
+      return r;
+    });
     setRooms(updated);
     safeStorage.setItem('stayflow_rooms', updated);
     saveServerState({
@@ -500,7 +529,25 @@ export default function App() {
   const handleUpdateRoom = (updatedRoom: Room) => {
     const now = Date.now();
     lastLocalSaveTimestamp.current = now;
-    const updated = rooms.map(r => r.id === updatedRoom.id ? updatedRoom : r);
+    let roomToSave = updatedRoom;
+    if (updatedRoom.status === 'occupied' && !updatedRoom.currentTenant) {
+      const occ = getRoomOccupant(updatedRoom, tenants, bookings);
+      if (occ) {
+        roomToSave = {
+          ...updatedRoom,
+          currentTenant: {
+            id: occ.id,
+            name: occ.name,
+            phone: occ.phone,
+            rentalType: occ.rentalType,
+            startDate: occ.startDate || new Date().toISOString().split('T')[0],
+          }
+        };
+      }
+    } else if (updatedRoom.status !== 'occupied' && updatedRoom.status !== 'reserved' && updatedRoom.currentTenant) {
+      roomToSave = { ...updatedRoom, currentTenant: undefined };
+    }
+    const updated = rooms.map(r => r.id === roomToSave.id ? roomToSave : r);
     setRooms(updated);
     safeStorage.setItem('stayflow_rooms', updated);
     saveServerState({
@@ -514,6 +561,72 @@ export default function App() {
     });
     notifyRealtimeChange('ROOMS_UPDATE', updated);
     saveRoomsToCloud(updated);
+  };
+
+  const handleUpdateRoomMonthlyRate = (roomId: string, newRate: number) => {
+    const now = Date.now();
+    lastLocalSaveTimestamp.current = now;
+    const targetRoom = rooms.find(r => r.id === roomId);
+    const updatedRooms = rooms.map(r => r.id === roomId ? { ...r, monthlyRate: newRate } : r);
+    setRooms(updatedRooms);
+    safeStorage.setItem('stayflow_rooms', updatedRooms);
+
+    let updatedTenants = tenants;
+    if (targetRoom) {
+      updatedTenants = tenants.map(t => {
+        if (t.roomId === roomId || t.roomNumber === targetRoom.number) {
+          return { ...t, monthlyRent: newRate };
+        }
+        return t;
+      });
+      setTenants(updatedTenants);
+      safeStorage.setItem('stayflow_tenants', updatedTenants);
+    }
+
+    saveServerState({
+      property,
+      utilityConfig,
+      rooms: updatedRooms,
+      tenants: updatedTenants,
+      bookings,
+      bills,
+      updatedAt: now,
+    });
+    notifyRealtimeChange('ROOMS_UPDATE', updatedRooms);
+    notifyRealtimeChange('TENANTS_UPDATE', updatedTenants);
+    saveRoomsToCloud(updatedRooms);
+    saveTenantsToCloud(updatedTenants);
+  };
+
+  const handleRefreshAllData = async () => {
+    try {
+      const serverData = await fetchServerState();
+      if (serverData) {
+        if (serverData.rooms && Array.isArray(serverData.rooms)) {
+          setRooms(serverData.rooms);
+          safeStorage.setItem('stayflow_rooms', serverData.rooms);
+        }
+        if (serverData.tenants && Array.isArray(serverData.tenants)) {
+          setTenants(serverData.tenants);
+          safeStorage.setItem('stayflow_tenants', serverData.tenants);
+        }
+        if (serverData.bookings && Array.isArray(serverData.bookings)) {
+          setBookings(serverData.bookings);
+          safeStorage.setItem('stayflow_bookings', serverData.bookings);
+        }
+        if (serverData.bills && Array.isArray(serverData.bills)) {
+          setBills(serverData.bills);
+          safeStorage.setItem('stayflow_bills', serverData.bills);
+        }
+      }
+    } catch {
+      // Local reconcile
+    }
+    setRooms(prev => {
+      const reconciled = reconcileRoomsWithOccupants(prev, tenants, bookings);
+      safeStorage.setItem('stayflow_rooms', reconciled);
+      return reconciled;
+    });
   };
 
   const handleAddRoom = (newRoom: Room) => {
@@ -1105,6 +1218,7 @@ export default function App() {
                 rooms={rooms}
                 bookings={bookings}
                 bills={bills}
+                tenants={tenants}
                 property={property}
                 onNavigateTab={setAdminTab}
                 onSelectRoom={(room) => {
@@ -1112,12 +1226,16 @@ export default function App() {
                 }}
                 onOpenInvoiceModal={handleOpenInvoiceModal}
                 onNewBookingClick={() => setAdminTab('bookings')}
+                onUpdateRoomMonthlyRate={handleUpdateRoomMonthlyRate}
+                onRefreshData={handleRefreshAllData}
               />
             )}
 
             {adminTab === 'rooms' && (
               <RoomManagement
                 rooms={rooms}
+                tenants={tenants}
+                bookings={bookings}
                 onUpdateRoomStatus={handleUpdateRoomStatus}
                 onUpdateRoom={handleUpdateRoom}
                 onAddRoom={handleAddRoom}
@@ -1136,6 +1254,8 @@ export default function App() {
             {adminTab === 'utilities' && (
               <UtilityCalculator
                 rooms={rooms}
+                tenants={tenants}
+                bookings={bookings}
                 utilityConfig={utilityConfig}
                 onUpdateUtilityConfig={handleUpdateUtilityConfig}
                 onUpdateRoomMeters={handleUpdateRoomMeters}

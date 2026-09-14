@@ -6,13 +6,16 @@ import {
   ShieldAlert, Sparkles, BedDouble, ArrowUpDown, Image as ImageIcon,
   History, FileText
 } from 'lucide-react';
-import { Room, RoomStatus, RoomType, UtilityBill, PropertyProfile } from '../../types';
+import { Room, RoomStatus, RoomType, UtilityBill, PropertyProfile, Tenant, Booking } from '../../types';
 import { formatCurrency, getStatusBadgeInfo } from '../../utils/formatters';
+import { getRoomOccupant } from '../../utils/tenantResolver';
 import { RoomImageManager } from './RoomImageManager';
 import { RoomBillHistoryModal } from './RoomBillHistoryModal';
 
 interface RoomManagementProps {
   rooms: Room[];
+  tenants?: Tenant[];
+  bookings?: Booking[];
   onUpdateRoomStatus: (roomId: string, newStatus: RoomStatus) => void;
   onUpdateRoom: (updatedRoom: Room) => void;
   onAddRoom: (newRoom: Room) => void;
@@ -27,6 +30,8 @@ interface RoomManagementProps {
 
 export const RoomManagement: React.FC<RoomManagementProps> = ({
   rooms,
+  tenants = [],
+  bookings = [],
   onUpdateRoomStatus,
   onUpdateRoom,
   onAddRoom,
@@ -79,7 +84,8 @@ export const RoomManagement: React.FC<RoomManagementProps> = ({
     if (typeFilter !== 'all' && r.type !== typeFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      return r.number.toLowerCase().includes(q) || (r.currentTenant?.name.toLowerCase().includes(q));
+      const occ = getRoomOccupant(r, tenants, bookings);
+      return r.number.toLowerCase().includes(q) || (occ?.name.toLowerCase().includes(q)) || (r.currentTenant?.name.toLowerCase().includes(q));
     }
     return true;
   });
@@ -225,8 +231,9 @@ export const RoomManagement: React.FC<RoomManagementProps> = ({
       {/* Rooms Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filteredRooms.map((room) => {
-          const badge = getStatusBadgeInfo(room.status);
-          const isOccupied = room.status === 'occupied';
+          const occupant = getRoomOccupant(room, tenants, bookings);
+          const isOccupied = room.status === 'occupied' || Boolean(occupant);
+          const badge = getStatusBadgeInfo(isOccupied ? 'occupied' : room.status);
           const coverImage = room.images && room.images.length > 0
             ? room.images[0]
             : 'https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80';
@@ -304,20 +311,31 @@ export const RoomManagement: React.FC<RoomManagementProps> = ({
                 </div>
 
                 {/* Tenant / Status Info */}
-                {isOccupied && room.currentTenant ? (
+                {occupant ? (
                   <div className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-2xl text-xs space-y-1">
-                    <div className="flex items-center gap-1.5 font-semibold text-indigo-900">
-                      <User className="w-3.5 h-3.5 text-indigo-600" />
-                      <span className="truncate">{room.currentTenant.name}</span>
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1.5 font-semibold text-indigo-900 truncate">
+                        <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                        <span className="truncate">{occupant.name}</span>
+                      </div>
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-medium ${
+                        occupant.rentalType === 'daily'
+                          ? 'bg-sky-100 text-sky-700'
+                          : 'bg-indigo-100 text-indigo-700'
+                      }`}>
+                        {occupant.rentalType === 'daily' ? 'รายวัน' : 'รายเดือน'}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-slate-600 text-[11px]">
-                      <Phone className="w-3 h-3 text-slate-400" />
-                      <span>{room.currentTenant.phone}</span>
-                    </div>
+                    {occupant.phone && (
+                      <div className="flex items-center gap-1.5 text-slate-600 text-[11px]">
+                        <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span>{occupant.phone}</span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-xs text-slate-500 line-clamp-2">
-                    {room.description}
+                    {room.description || 'ห้องว่างพร้อมให้เช่า'}
                   </div>
                 )}
 
@@ -918,17 +936,23 @@ export const RoomManagement: React.FC<RoomManagementProps> = ({
                 </p>
               </div>
 
-              {roomToDelete.status === 'occupied' && roomToDelete.currentTenant && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5">
-                    <ShieldAlert className="w-4 h-4 text-rose-600" />
-                    <span>แจ้งเตือน: ห้องนี้มีผู้เช่าอยู่</span>
-                  </div>
-                  <p className="text-[11px] text-rose-700">
-                    ผู้เช่าปัจจุบัน: <strong>{roomToDelete.currentTenant.name}</strong> ({roomToDelete.currentTenant.phone})
-                  </p>
-                </div>
-              )}
+              {(() => {
+                const occ = getRoomOccupant(roomToDelete, tenants, bookings);
+                if (roomToDelete.status === 'occupied' || occ) {
+                  return (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 space-y-1">
+                      <div className="font-bold flex items-center gap-1.5">
+                        <ShieldAlert className="w-4 h-4 text-rose-600" />
+                        <span>แจ้งเตือน: ห้องนี้มีผู้เช่าพักอาศัยอยู่</span>
+                      </div>
+                      <p className="text-[11px] text-rose-700">
+                        ผู้เช่าปัจจุบัน: <strong>{occ?.name || roomToDelete.currentTenant?.name || 'มีผู้เช่า'}</strong> {occ?.phone ? `(${occ.phone})` : ''}
+                      </p>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1.5 text-slate-600">
                 <div className="flex justify-between">

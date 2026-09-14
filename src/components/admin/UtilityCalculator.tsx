@@ -7,14 +7,17 @@ import {
   Plus, Edit3, ChevronRight, SlidersHorizontal, Eye, Trash2, RotateCcw,
   History, BarChart3, Search, Filter, Clock, MessageCircle
 } from 'lucide-react';
-import { Room, UtilityRateConfig, UtilityBill, PropertyProfile } from '../../types';
+import { Room, UtilityRateConfig, UtilityBill, PropertyProfile, Tenant, Booking } from '../../types';
 import { formatCurrency, formatNumber } from '../../utils/formatters';
+import { getRoomOccupant } from '../../utils/tenantResolver';
 import { RoomBillHistoryModal } from './RoomBillHistoryModal';
 import { DueBillsAlertBanner } from './DueBillsAlertBanner';
 import { LineBillNotifyModal } from './LineBillNotifyModal';
 
 interface UtilityCalculatorProps {
   rooms: Room[];
+  tenants?: Tenant[];
+  bookings?: Booking[];
   utilityConfig: UtilityRateConfig;
   onUpdateUtilityConfig: (newConfig: UtilityRateConfig) => void;
   onUpdateRoomMeters: (roomId: string, newWater: number, newElec: number) => void;
@@ -28,6 +31,8 @@ interface UtilityCalculatorProps {
 
 export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
   rooms,
+  tenants = [],
+  bookings = [],
   utilityConfig,
   onUpdateUtilityConfig,
   onUpdateRoomMeters,
@@ -96,17 +101,18 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
   // Filtered rooms
   const filteredRooms = useMemo(() => {
     return rooms.filter((r) => {
-      const hasTenant = r.status === 'occupied' && Boolean(r.currentTenant);
-      if (statusFilter === 'occupied' && !hasTenant) return false;
+      const occupant = getRoomOccupant(r, tenants, bookings);
+      const isOccupied = r.status === 'occupied' || Boolean(occupant);
+      if (statusFilter === 'occupied' && !isOccupied) return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchesNum = r.number.toLowerCase().includes(query);
-        const matchesTenant = r.currentTenant?.name.toLowerCase().includes(query);
+        const matchesTenant = (occupant?.name.toLowerCase().includes(query)) || (r.currentTenant?.name.toLowerCase().includes(query));
         return matchesNum || matchesTenant;
       }
       return true;
     });
-  }, [rooms, statusFilter, searchQuery]);
+  }, [rooms, tenants, bookings, statusFilter, searchQuery]);
 
   // Filtered bills for All Bills History tab
   const filteredAllBills = useMemo(() => {
@@ -181,7 +187,9 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
 
   // Generate bill for a room (create or update/re-issue)
   const handleCreateBill = (room: Room) => {
-    if (!room.currentTenant || room.status !== 'occupied') {
+    const occupant = getRoomOccupant(room, tenants, bookings);
+    const isOccupied = room.status === 'occupied' || Boolean(occupant);
+    if (!isOccupied) {
       setSavedSuccessMsg(`⚠️ ห้อง ${room.number} ไม่มีผู้เช่าพักอาศัย จึงไม่สามารถออกบิลได้`);
       setTimeout(() => setSavedSuccessMsg(null), 3500);
       return;
@@ -201,11 +209,11 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
     const elecUnits = Math.max(0, draft.currElec - draft.prevElec);
     const waterAmount = waterUnits * utilityConfig.waterRatePerUnit;
     const elecAmount = elecUnits * utilityConfig.elecRatePerUnit;
-    const roomRent = room.monthlyRate;
+    const roomRent = occupant?.rentalType === 'daily' ? (room.dailyRate || 0) : room.monthlyRate;
     const commonFee = utilityConfig.commonFeeMonthly;
     const internetFee = utilityConfig.internetFeeMonthly;
     const trashFee = utilityConfig.trashFeeMonthly;
-    const parkingFee = room.currentTenant ? utilityConfig.parkingFeeMonthly : 0;
+    const parkingFee = occupant ? utilityConfig.parkingFeeMonthly : 0;
     const otherFees = draft.otherFee || 0;
     const discount = draft.discount || 0;
 
@@ -231,8 +239,8 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
       billNumber,
       roomId: room.id,
       roomNumber: room.number,
-      tenantName: room.currentTenant?.name || 'ผู้เช่าห้องพัก',
-      tenantPhone: room.currentTenant?.phone || '',
+      tenantName: occupant?.name || room.currentTenant?.name || 'ผู้เช่าห้องพัก',
+      tenantPhone: occupant?.phone || room.currentTenant?.phone || '',
       monthYear: selectedMonth,
       billingDate: todayStr,
       dueDate: dueDateStr,
@@ -275,13 +283,14 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
 
   // Batch generate for all occupied rooms
   const handleBatchGenerate = () => {
-    const occupied = rooms.filter(r => r.status === 'occupied' && Boolean(r.currentTenant));
+    const occupied = rooms.filter(r => r.status === 'occupied' || Boolean(getRoomOccupant(r, tenants, bookings)));
     if (occupied.length === 0) {
       setSavedSuccessMsg('⚠️ ไม่พบห้องที่มีผู้เช่าพักอาศัยสำหรับออกใบแจ้งหนี้');
       setTimeout(() => setSavedSuccessMsg(null), 3500);
       return;
     }
     occupied.forEach(r => {
+      const occupant = getRoomOccupant(r, tenants, bookings);
       const draft = meterDrafts[r.id] || {
         prevWater: r.previousWaterMeter,
         currWater: r.currentWaterMeter,
@@ -292,7 +301,8 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
       const elecUnits = Math.max(0, draft.currElec - draft.prevElec);
       const waterAmount = waterUnits * utilityConfig.waterRatePerUnit;
       const elecAmount = elecUnits * utilityConfig.elecRatePerUnit;
-      const subtotal = r.monthlyRate + waterAmount + elecAmount + utilityConfig.commonFeeMonthly + utilityConfig.trashFeeMonthly;
+      const roomRent = occupant?.rentalType === 'daily' ? (r.dailyRate || 0) : r.monthlyRate;
+      const subtotal = roomRent + waterAmount + elecAmount + utilityConfig.commonFeeMonthly + utilityConfig.trashFeeMonthly;
       
       const billNumber = `INV-${selectedMonth.replace('-', '')}-${r.number}`;
       const existing = existingBills.find(b => b.roomId === r.id && b.monthYear === selectedMonth);
@@ -302,8 +312,8 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
         billNumber,
         roomId: r.id,
         roomNumber: r.number,
-        tenantName: r.currentTenant?.name || 'ผู้เช่า',
-        tenantPhone: r.currentTenant?.phone || '',
+        tenantName: occupant?.name || r.currentTenant?.name || 'ผู้เช่า',
+        tenantPhone: occupant?.phone || r.currentTenant?.phone || '',
         monthYear: selectedMonth,
         billingDate: new Date().toISOString().split('T')[0],
         dueDate: new Date(Date.now() + 10 * 86400000).toISOString().split('T')[0],
@@ -499,7 +509,7 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  เฉพาะห้องที่มีคนพัก ({rooms.filter(r => r.status === 'occupied' && Boolean(r.currentTenant)).length})
+                  เฉพาะห้องที่มีคนพัก ({rooms.filter(r => r.status === 'occupied' || Boolean(getRoomOccupant(r, tenants, bookings))).length})
                 </button>
                 <button
                   type="button"
@@ -585,8 +595,9 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
                     const isElecNegative = draft.currElec < draft.prevElec;
                     const isHighElec = elecUnits > 300;
 
-                    const isRoomOccupied = room.status === 'occupied' && Boolean(room.currentTenant);
-                    const rentAmount = isRoomOccupied ? room.monthlyRate : 0;
+                    const occupant = getRoomOccupant(room, tenants, bookings);
+                    const isRoomOccupied = room.status === 'occupied' || Boolean(occupant);
+                    const rentAmount = isRoomOccupied ? (occupant?.rentalType === 'daily' ? (room.dailyRate || 0) : room.monthlyRate) : 0;
                     const commonCost = isRoomOccupied ? (utilityConfig.commonFeeMonthly + utilityConfig.trashFeeMonthly) : 0;
                     const totalRoomBill = isRoomOccupied ? (rentAmount + commonCost + waterCost + elecCost) : (waterCost + elecCost);
 
@@ -612,7 +623,7 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
                       <tr 
                         key={room.id} 
                         className={`hover:bg-slate-50/70 transition-colors ${
-                          room.status !== 'occupied' ? 'opacity-60 bg-slate-50/30' : ''
+                          !isRoomOccupied ? 'opacity-60 bg-slate-50/30' : ''
                         }`}
                       >
                         {/* Room & Tenant */}
@@ -623,10 +634,26 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
                             </span>
                             <div>
                               <div className="font-semibold text-slate-900">
-                                {room.currentTenant?.name || (
+                                {occupant ? (
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span>{occupant.name}</span>
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                                      occupant.rentalType === 'daily'
+                                        ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                                        : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                    }`}>
+                                      {occupant.rentalType === 'daily' ? 'รายวัน' : 'รายเดือน'}
+                                    </span>
+                                  </div>
+                                ) : (
                                   <span className="text-slate-400 font-normal italic">ไม่มีผู้เช่า</span>
                                 )}
                               </div>
+                              {occupant?.phone && (
+                                <div className="text-[11px] text-slate-500 font-mono">
+                                  📞 {occupant.phone}
+                                </div>
+                              )}
                               <div className="text-[11px] text-slate-500 flex items-center gap-2">
                                 <span>{room.type}</span>
                                 <span>•</span>
@@ -928,11 +955,14 @@ export const UtilityCalculator: React.FC<UtilityCalculatorProps> = ({
                   className="bg-transparent text-slate-800 font-medium outline-none cursor-pointer"
                 >
                   <option value="all">ทุกห้อง ({rooms.length} ห้อง)</option>
-                  {rooms.map(r => (
-                    <option key={r.id} value={r.id}>
-                      ห้อง {r.number} {r.currentTenant ? `(${r.currentTenant.name})` : ''}
-                    </option>
-                  ))}
+                  {rooms.map(r => {
+                    const occ = getRoomOccupant(r, tenants, bookings);
+                    return (
+                      <option key={r.id} value={r.id}>
+                        ห้อง {r.number} {occ ? `(${occ.name})` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
