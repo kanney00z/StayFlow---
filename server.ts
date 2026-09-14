@@ -341,9 +341,14 @@ app.post('/api/line/send-bill', async (req: Request, res: Response) => {
     }
 
     if (!response.ok) {
+      const isToInvalid = JSON.stringify(respData).includes("'to'") || JSON.stringify(respData).includes("invalid");
+      const errorMsg = isToInvalid
+        ? `ไอดีผู้รับ "${targetUserId}" ไม่ถูกต้อง: บอท LINE ต้องการ LINE User ID (ขึ้นต้นด้วย U 33 ตัวอักษร) ไม่สามารถใช้ LINE ID ค้นหาเพื่อน (@...) ได้ แนะนำให้ใช้ตัวเลือกเปิดส่งในแอป LINE แทน`
+        : ((respData as any)?.message || 'LINE API returned an error');
+
       res.status(response.status).json({
         success: false,
-        error: 'LINE API returned an error',
+        error: errorMsg,
         details: respData
       });
       return;

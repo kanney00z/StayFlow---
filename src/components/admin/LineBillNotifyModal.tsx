@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Send, MessageCircle, Copy, Check, ExternalLink, 
-  AlertCircle, CheckCircle2, Clock, Sparkles, Building2, 
-  User, CreditCard, ChevronRight, X, Loader2, Share2, Radio
+  AlertCircle, AlertTriangle, CheckCircle2, Clock, Sparkles, Building2, 
+  User, CreditCard, ChevronRight, X, Loader2, Share2, Radio, Info
 } from 'lucide-react';
 import { UtilityBill, PropertyProfile } from '../../types';
 import { formatCurrency, formatDateThai } from '../../utils/formatters';
@@ -40,6 +40,7 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
     success: boolean;
     message: string;
     details?: any;
+    isLineIdError?: boolean;
   } | null>(null);
   const [copiedText, setCopiedText] = useState(false);
   const [botInfo, setBotInfo] = useState<any>(null);
@@ -92,6 +93,22 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
       const isBroadcast = sendMethod === 'bot_broadcast';
       const target = isBroadcast ? undefined : (targetUserId.trim() || undefined);
 
+      // Detect if user entered a standard LINE ID (like @kanney88 or kanney88)
+      if (!isBroadcast && target) {
+        const isNotApiId = target.startsWith('@') || 
+          (target.length < 30 && !target.startsWith('U') && !target.startsWith('C') && !target.startsWith('R'));
+        
+        if (isNotApiId) {
+          setSendResult({
+            success: false,
+            message: `ไม่สามารถส่งผ่านบอทได้ เนื่องจาก "${target}" เป็น LINE ID (ไอดีค้นหาเพื่อน) ไม่ใช่ LINE User ID ของบอท\n\n💡 บอท LINE ต้องการ User ID ที่ขึ้นต้นด้วย U... (รหัส 33 หลัก) หรือ Group ID\n\n👉 วิธีที่สะดวกที่สุด: สลับไปใช้ตัวเลือกแรก "เปิดส่งในแอป LINE" ด้านบน แล้วกดส่งหาคุณ ${target.replace(/^@/, '')} ได้ทันทีโดยไม่ต้องใช้ User ID ครับ`,
+            isLineIdError: true
+          });
+          setIsSending(false);
+          return;
+        }
+      }
+
       const result = await sendLineBillReminder(bill, property, {
         targetUserId: target,
         broadcast: isBroadcast,
@@ -109,10 +126,19 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                 : 'ตรวจสอบรูปแบบ Flex Message สวยงาม ถูกต้องตามมาตรฐาน LINE 100%! (สามารถเปิดส่งในแอป LINE หรือระบุ User ID)')
         });
       } else {
+        const rawErr = String(result.details?.message || result.error || '');
+        let userFriendlyMsg = result.error || 'ส่งข้อความไม่สำเร็จ กรุณาลองใหม่อีกครั้ง หรือใช้ปุ่มเปิดส่งในแอป LINE';
+        const isToInvalid = rawErr.toLowerCase().includes("'to'") || rawErr.toLowerCase().includes('invalid') || rawErr.includes('The property, \'to\'');
+
+        if (isToInvalid) {
+          userFriendlyMsg = `ไอดีผู้รับ "${target || ''}" ไม่ถูกต้อง: LINE Messaging API ไม่อนุญาตให้ใช้ LINE ID ทั่วไป (เช่น @...) ในการส่งผ่านบอท\n\nบอทจะรับเฉพาะ 'LINE User ID' (รหัสเฉพาะ 33 หลัก ขึ้นต้นด้วย U...) เท่านั้น\n\n👉 แนะนำ: ให้เลือกหัวข้อ "เปิดส่งในแอป LINE" ด้านบน แล้วกดส่งหาผู้เช่าได้ทันที`;
+        }
+
         setSendResult({
           success: false,
-          message: result.error || 'ส่งข้อความไม่สำเร็จ กรุณาลองใหม่อีกครั้ง หรือใช้ปุ่มเปิดส่งในแอป LINE',
-          details: result.details
+          message: userFriendlyMsg,
+          details: result.details,
+          isLineIdError: isToInvalid
         });
       }
     } catch (err: any) {
@@ -427,17 +453,58 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
 
                   {/* Input for User ID if bot_push selected */}
                   {sendMethod === 'bot_push' && (
-                    <div className="pl-6 pt-1">
-                      <input
-                        type="text"
-                        value={targetUserId}
-                        onChange={(e) => setTargetUserId(e.target.value)}
-                        placeholder="ระบุ LINE User ID หรือ Group ID (เช่น U5a53...)"
-                        className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-indigo-500"
-                      />
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        * หาได้จาก webhook หรือระบบ LINE Official Account ของคุณ
-                      </p>
+                    <div className="pl-6 pt-1 space-y-2">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={targetUserId}
+                          onChange={(e) => setTargetUserId(e.target.value)}
+                          placeholder="ระบุ LINE User ID (ขึ้นต้นด้วย U... 33 หลัก) หรือ Group ID (C...)"
+                          className={`w-full bg-white border rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none ${
+                            targetUserId.trim().startsWith('@') || (targetUserId.trim().length > 0 && targetUserId.trim().length < 30 && !targetUserId.trim().startsWith('U') && !targetUserId.trim().startsWith('C'))
+                              ? 'border-amber-400 bg-amber-50/30 focus:border-amber-500'
+                              : 'border-indigo-200 focus:border-indigo-500'
+                          }`}
+                        />
+                      </div>
+
+                      {/* Real-time warning when user types a personal LINE ID like @kanney88 */}
+                      {(targetUserId.trim().startsWith('@') || (targetUserId.trim().length > 0 && targetUserId.trim().length < 30 && !targetUserId.trim().startsWith('U') && !targetUserId.trim().startsWith('C') && !targetUserId.trim().startsWith('R'))) && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-950 text-xs space-y-2"
+                        >
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                            <div className="flex-1 text-[11px] leading-relaxed">
+                              <span className="font-bold text-amber-900">
+                                "{targetUserId.trim()}" คือ LINE ID (ค้นหาเพื่อน)
+                              </span>
+                              <p className="text-amber-800 mt-0.5">
+                                บอทของ LINE Messaging API จะรับเฉพาะ <strong>LINE User ID ทางเทคนิค (ขึ้นต้นด้วย U ตามด้วยตัวเลข/ตัวอักษร 32 ตัว)</strong> เท่านั้น LINE ไม่อนุญาตให้บอทส่งข้อความผ่าน LINE ID ค้นหาเพื่อน
+                              </p>
+                            </div>
+                          </div>
+                          <div className="pt-1 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSendMethod('line_share')}
+                              className="text-[11px] bg-[#06C755] hover:bg-[#05b34c] text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm cursor-pointer transition-all"
+                            >
+                              <Share2 className="w-3.5 h-3.5" />
+                              <span>สลับไป "เปิดส่งในแอป LINE" ให้ผู้เช่าคนนี้เลย (แนะนำ)</span>
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      <div className="flex items-start gap-1.5 text-[11px] text-slate-500">
+                        <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5" />
+                        <span>
+                          LINE User ID ต้องขึ้นต้นด้วยตัว <strong>U</strong> เช่น <code className="bg-slate-100 px-1 py-0.5 rounded text-indigo-700 font-mono text-[10px]">U4af49806294868a83d739812543d7890</code> (ไม่ใช่ @LINE ID ทั่วไป)
+                        </span>
+                      </div>
                     </div>
                   )}
 
@@ -495,11 +562,28 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                     ) : (
                       <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     )}
-                    <div className="flex-1">
+                    <div className="flex-1 space-y-1.5">
                       <div className="font-bold">
                         {sendResult.success ? 'ส่งสำเร็จเรียบร้อย!' : 'เกิดข้อผิดพลาดในการส่ง'}
                       </div>
-                      <div className="text-[11px] mt-0.5 leading-relaxed">{sendResult.message}</div>
+                      <div className="text-[11px] leading-relaxed whitespace-pre-line">{sendResult.message}</div>
+
+                      {sendResult.isLineIdError && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSendMethod('line_share');
+                              handleOpenLineShare();
+                            }}
+                            className="px-3.5 py-2 bg-[#06C755] hover:bg-[#05b34c] text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span>เปิดแอป LINE ส่งให้ผู้เช่าคนนี้เลยทันที</span>
+                            <ExternalLink className="w-3 h-3 opacity-75" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 )}
