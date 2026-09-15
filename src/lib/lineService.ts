@@ -1,4 +1,4 @@
-import { UtilityBill, PropertyProfile } from '../types';
+import { UtilityBill, PropertyProfile, LeaseContract } from '../types';
 import { formatCurrency, formatDateThai } from '../utils/formatters';
 
 export const DEFAULT_LINE_CHANNEL_ACCESS_TOKEN = 
@@ -209,6 +209,105 @@ export async function sendLineBillReminder(
       error: err.message || 'ส่งข้อความไม่สำเร็จ'
     };
   }
+}
+
+export interface SendContractOptions {
+  targetUserId?: string;
+  broadcast?: boolean;
+  customNote?: string;
+  token?: string;
+}
+
+export async function sendLineContractNotice(
+  contract: LeaseContract,
+  property: PropertyProfile,
+  options: SendContractOptions = {}
+): Promise<{ success: boolean; mode?: string; recipient?: string; error?: string; isStaticOrNoBackend?: boolean; details?: any }> {
+  try {
+    const token = options.token || getStoredLineToken();
+    const res = await fetch('/api/line/send-contract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contract,
+        property,
+        targetUserId: options.targetUserId,
+        broadcast: options.broadcast || false,
+        customMessage: options.customNote,
+        token
+      })
+    });
+
+    const result = await parseSafeResponse(res, 'ส่งสัญญาเช่าไม่สำเร็จ');
+    if (!result.success) {
+      return {
+        success: false,
+        isStaticOrNoBackend: result.isStaticOrNoBackend,
+        error: result.error,
+        details: result.details
+      };
+    }
+
+    return result.data || { success: true };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'ส่งข้อความสัญญาไม่สำเร็จ'
+    };
+  }
+}
+
+export function generateLineContractShareText(
+  contract: LeaseContract,
+  property: PropertyProfile,
+  customNote?: string
+): string {
+  const propertyName = property?.name || 'หอพัก/อพาร์ตเมนต์';
+  const phone = property?.phone ? `โทร. ${property.phone}` : '';
+  const lineContact = property?.lineId ? `LINE: ${property.lineId}` : '';
+  const startDateStr = formatDateThai(contract.startDate);
+  const endDateStr = contract.endDate ? formatDateThai(contract.endDate) : 'ตามกำหนดสัญญา';
+
+  let text = `📜 หนังสือสัญญาเช่าห้องพัก ${contract.roomNumber}\n`;
+  text += `🏢 ${propertyName}\n`;
+  text += `เลขที่สัญญา: ${contract.contractNumber}\n`;
+  text += `---------------------------------\n`;
+  text += `👤 ผู้เช่า: ${contract.lesseeName} (โทร. ${contract.lesseePhone || '-'})\n`;
+  text += `🏠 ผู้ให้เช่า: ${contract.lessorName} (${phone})\n`;
+  text += `🗓️ ระยะเวลาเช่า: ${startDateStr} ถึง ${endDateStr} (${contract.durationMonths} เดือน)\n`;
+  text += `💵 ค่าเช่าห้องพัก: ${formatCurrency(contract.monthlyRent)} / เดือน\n`;
+  text += `⏰ วันครบกำหนดชำระ: ทุกวันที่ ${contract.paymentDueDay} ของเดือน\n`;
+  text += `🛡️ เงินประกันความเสียหาย: ${formatCurrency(contract.depositAmount)}\n`;
+  text += `💧 ค่าน้ำ: ${contract.waterRateText || '-'} | ⚡ ค่าไฟ: ${contract.elecRateText || '-'}\n`;
+
+  if (contract.rulesAndClauses && contract.rulesAndClauses.length > 0) {
+    text += `---------------------------------\n`;
+    text += `📌 ระเบียบและข้อตกลงสำคัญ (${contract.rulesAndClauses.length} ข้อ):\n`;
+    contract.rulesAndClauses.slice(0, 5).forEach((rule, idx) => {
+      text += `  ${idx + 1}. ${rule}\n`;
+    });
+    if (contract.rulesAndClauses.length > 5) {
+      text += `  ...และข้อกำหนดอื่นๆ รวม ${contract.rulesAndClauses.length} ข้อ\n`;
+    }
+  }
+
+  if (customNote && customNote.trim()) {
+    text += `---------------------------------\n`;
+    text += `💬 หมายเหตุ: ${customNote.trim()}\n`;
+  }
+
+  text += `---------------------------------\n`;
+  text += `ขอบคุณครับ/ค่ะ 🙏 ${lineContact}`;
+  return text;
+}
+
+export function getLineContractShareUrl(
+  contract: LeaseContract,
+  property: PropertyProfile,
+  customNote?: string
+): string {
+  const text = generateLineContractShareText(contract, property, customNote);
+  return `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
 }
 
 export async function sendLineTestMessage(

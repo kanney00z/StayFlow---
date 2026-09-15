@@ -3,12 +3,13 @@ import {
   FileText, Edit3, Check, Plus, Trash2, Printer, 
   Copy, Save, Building, User, Calendar, ShieldCheck, 
   AlertCircle, Sparkles, CheckCircle2, ChevronDown, ChevronUp,
-  RefreshCw, Scale, Download, CheckCircle, Send
+  RefreshCw, Scale, Download, CheckCircle, Send, MessageCircle
 } from 'lucide-react';
 import { LeaseContract, PropertyProfile, UtilityBill, Room, Tenant } from '../../types';
 import { formatCurrency, formatDateThai, addMonthsToDate } from '../../utils/formatters';
 import { DEFAULT_CONTRACT_RULES, createDefaultLeaseContract } from '../../utils/contractHelpers';
 import { printHtmlContent, generateContractHtml, downloadHtmlFile } from '../../utils/printHelpers';
+import { LineContractNotifyModal } from './LineContractNotifyModal';
 
 interface LeaseContractSectionProps {
   contract?: LeaseContract;
@@ -34,6 +35,8 @@ export const LeaseContractSection: React.FC<LeaseContractSectionProps> = ({
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [copiedLine, setCopiedLine] = useState<boolean>(false);
+  const [copyToast, setCopyToast] = useState<boolean>(false);
+  const [showLineModal, setShowLineModal] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
   const [downloadSuccess, setDownloadSuccess] = useState<boolean>(false);
@@ -99,15 +102,27 @@ export const LeaseContractSection: React.FC<LeaseContractSectionProps> = ({
 
   const handleCopyLineSummary = () => {
     const text = getLineContractText();
-    navigator.clipboard.writeText(text);
+    try {
+      navigator.clipboard.writeText(text);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
     setCopiedLine(true);
-    setTimeout(() => setCopiedLine(false), 2500);
+    setCopyToast(true);
+    setTimeout(() => {
+      setCopiedLine(false);
+      setCopyToast(false);
+    }, 4000);
   };
 
   const handleOpenDirectLineContractShare = () => {
-    const text = getLineContractText();
-    const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
-    window.open(lineUrl, '_blank', 'noopener,noreferrer');
+    // Open the comprehensive LINE modal so user has all options (Bot Push or Copy & Open App)
+    setShowLineModal(true);
   };
 
   const handlePrintContract = () => {
@@ -191,12 +206,12 @@ export const LeaseContractSection: React.FC<LeaseContractSectionProps> = ({
                 <button
                   type="button"
                   id="btn-direct-contract-line"
-                  onClick={handleOpenDirectLineContractShare}
+                  onClick={() => setShowLineModal(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
-                  title="เปิดแอป LINE เพื่อเลือกแชทส่งสัญญาให้ลูกค้าโดยตรง"
+                  title="เปิดระบบส่งสัญญาเช่าใน LINE (เลือกได้ทั้งส่งผ่าน Bot หรือเปิดแอป/คัดลอก)"
                 >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>เปิด LINE</span>
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>ส่ง LINE</span>
                 </button>
                 <button
                   type="button"
@@ -239,6 +254,22 @@ export const LeaseContractSection: React.FC<LeaseContractSectionProps> = ({
         <div className="bg-emerald-950/80 border border-emerald-800 rounded-xl p-3 text-emerald-200 text-xs font-semibold flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           <span>บันทึกสัญญาเช่าแนบเข้าบิลของห้อง {contract.roomNumber} เรียบร้อยแล้ว!</span>
+        </div>
+      )}
+
+      {copyToast && (
+        <div className="bg-emerald-950/90 border border-emerald-500/80 rounded-xl p-3 text-emerald-200 text-xs font-semibold flex items-center justify-between gap-2 shadow-lg shadow-emerald-950/40">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>คัดลอกข้อความสรุปสัญญาเช่าแล้ว! สามารถเปิดแชท LINE แล้วกดวาง (Ctrl+V) ได้ทันที</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowLineModal(true)}
+            className="px-2.5 py-1 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors cursor-pointer"
+          >
+            เปิดระบบส่ง LINE
+          </button>
         </div>
       )}
 
@@ -683,6 +714,14 @@ export const LeaseContractSection: React.FC<LeaseContractSectionProps> = ({
           </div>
         </div>
       )}
+
+      {/* LINE Contract Notify Modal */}
+      <LineContractNotifyModal
+        isOpen={showLineModal}
+        onClose={() => setShowLineModal(false)}
+        contract={contract}
+        property={property}
+      />
     </div>
   );
 };

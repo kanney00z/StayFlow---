@@ -183,15 +183,28 @@ ${bill.paidAmount && bill.paidAmount > 0 ? `💵 ชำระแล้ว: ${for
 
   const handleCopyLineText = () => {
     const text = getLineInvoiceText();
-    navigator.clipboard.writeText(text);
+    try {
+      navigator.clipboard.writeText(text);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
     setCopiedLine(true);
-    setTimeout(() => setCopiedLine(false), 2500);
+    setTimeout(() => setCopiedLine(false), 3500);
   };
 
   const handleOpenDirectLineShare = () => {
+    handleCopyLineText();
     const text = getLineInvoiceText();
     const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
-    window.open(lineUrl, '_blank', 'noopener,noreferrer');
+    const win = window.open(lineUrl, '_blank', 'noopener,noreferrer');
+    if (!win || win.closed || typeof win.closed === 'undefined') {
+      setShowLineNotifyModal(true);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
