@@ -665,18 +665,29 @@ export const LineBillNotifyModal: React.FC<LineBillNotifyModalProps> = ({
                       </div>
                       <div className="text-[11px] leading-relaxed whitespace-pre-line">{sendResult.message}</div>
 
-                      {sendResult.isLineIdError && (
-                        <div className="pt-2">
+                      {!sendResult.success && (
+                        <div className="pt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('share');
+                              handleOpenLineShare();
+                            }}
+                            className="px-3 py-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span>เปิดแอป LINE ส่งให้ผู้เช่าทันที</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => {
                               setActiveTab('share');
                               handleCopyText();
                             }}
-                            className="px-3.5 py-2 bg-[#06C755] hover:bg-[#05b34c] text-white font-bold rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                           >
                             <Copy className="w-3.5 h-3.5" />
-                            <span>สลับไปคัดลอกข้อความส่งให้ผู้เช่าเลยทันที</span>
+                            <span>คัดลอกข้อความ</span>
                           </button>
                         </div>
                       )}

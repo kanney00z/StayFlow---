@@ -341,6 +341,7 @@ app.post('/api/line/send-bill', async (req: Request, res: Response) => {
     }
 
     if (!response.ok) {
+      console.error('LINE API Bill error response:', response.status, respData);
       const respStr = JSON.stringify(respData);
       const isToInvalid = respStr.includes("'to'") || (Array.isArray((respData as any)?.details) && (respData as any).details.some((d: any) => d.property === 'to'));
       
@@ -351,6 +352,9 @@ app.post('/api/line/send-bill', async (req: Request, res: Response) => {
         } else {
           errorMsg = `ไม่สามารถส่งถึง LINE User ID "${targetUserId}" ได้ เนื่องจากผู้ใช้นี้ยังไม่ได้กดเพิ่มเพื่อนกับ LINE Official Account ของหอพัก หรือได้บล็อกบอทไว้ (LINE ไม่อนุญาตให้บอทยิงหาคนที่ไม่ได้เป็นเพื่อน)`;
         }
+      } else if (Array.isArray((respData as any)?.details) && (respData as any).details.length > 0) {
+        const detailMsgs = (respData as any).details.map((d: any) => `${d.property ? d.property + ': ' : ''}${d.message}`).join(', ');
+        errorMsg = `LINE แจ้งข้อผิดพลาด: ${detailMsgs}`;
       }
 
       res.status(response.status).json({
@@ -482,16 +486,48 @@ function formatDateThai(dateStr: string): string {
   return dateStr;
 }
 
+// Helper to safely format LINE Contact URI without spaces or illegal characters
+function sanitizeLineContactUri(lineIdRaw?: string): string {
+  const defaultUri = 'https://line.me/R/ti/p/@141xvjme';
+  if (!lineIdRaw || typeof lineIdRaw !== 'string') return defaultUri;
+
+  const trimmed = lineIdRaw.trim();
+  if (!trimmed) return defaultUri;
+
+  // If already a valid http/https URL
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const cleanUrl = trimmed.replace(/\s+/g, '');
+      const parsed = new URL(cleanUrl);
+      return parsed.toString();
+    } catch {
+      return defaultUri;
+    }
+  }
+
+  // Strip all whitespace and leading @
+  const cleanId = trimmed.replace(/\s+/g, '').replace(/^@+/, '');
+  if (/^[a-zA-Z0-9._-]+$/.test(cleanId)) {
+    return `https://line.me/R/ti/p/@${cleanId}`;
+  }
+
+  return defaultUri;
+}
+
 // Helper to construct the gorgeous LINE Flex Message
 function createBillFlexMessage(bill: any, property: any, customNote?: string) {
-  const roomNumber = bill.roomNumber || 'ไม่ระบุ';
-  const tenantName = bill.tenantName || 'ผู้เช่า';
+  const roomNumber = (bill.roomNumber || 'ไม่ระบุ').toString().trim();
+  const tenantName = (bill.tenantName || 'ผู้เช่า').toString().trim();
   const grandTotal = formatMoney(bill.grandTotal);
   const dueDateStr = formatDateThai(bill.dueDate);
-  const propertyName = property?.name || 'StayFlow หอพัก/อพาร์ตเมนต์';
-  const promptPay = property?.promptPayId || '-';
-  const bankName = property?.bankName || '';
-  const bankAccount = property?.bankAccount || '';
+  const propertyName = (property?.name || 'StayFlow หอพัก/อพาร์ตเมนต์').toString().trim();
+  
+  const promptPay = (property?.promptPayId || '').toString().trim();
+  const promptPayName = (property?.promptPayName || propertyName || '').toString().trim();
+  const bankName = (property?.bankName || '').toString().trim();
+  const bankAccount = (property?.bankAccount || '').toString().trim();
+  const bankAccountName = (property?.bankAccountName || propertyName || '').toString().trim();
+  const trimmedNote = (customNote && typeof customNote === 'string') ? customNote.trim() : '';
 
   const isOverdue = bill.paymentStatus === 'overdue';
   const headerStatusText = isOverdue ? '⚠️ เกินกำหนดชำระ' : '🔔 ถึงกำหนดชำระแล้ว';
@@ -570,11 +606,12 @@ function createBillFlexMessage(bill: any, property: any, customNote?: string) {
   }
 
   if (bill.otherFees && bill.otherFees > 0) {
+    const otherNote = (bill.otherFeesNote || '').toString().trim() || 'ค่าบริการอื่นๆ';
     itemRows.push({
       type: 'box',
       layout: 'horizontal',
       contents: [
-        { type: 'text', text: `8. ${bill.otherFeesNote || 'ค่าบริการอื่นๆ'}`, size: 'xs', color: '#475569', flex: 6 },
+        { type: 'text', text: `8. ${otherNote}`, size: 'xs', color: '#475569', flex: 6 },
         { type: 'text', text: `฿ ${formatMoney(bill.otherFees)}`, size: 'xs', color: '#0F172A', weight: 'bold', align: 'end', flex: 4 }
       ]
     });
@@ -772,14 +809,21 @@ function createBillFlexMessage(bill: any, property: any, customNote?: string) {
               },
               ...(promptPay ? [{
                 type: 'text',
-                text: `📲 พร้อมเพย์: ${promptPay} (${property?.promptPayName || propertyName})`,
+                text: `📲 พร้อมเพย์: ${promptPay}${promptPayName ? ` (${promptPayName})` : ''}`,
                 size: 'xs',
                 color: '#15803D',
                 margin: 'xs'
               }] : []),
               ...(bankName && bankAccount ? [{
                 type: 'text',
-                text: `🏦 ธนาคาร: ${bankName} ${bankAccount} (${property?.bankAccountName || propertyName})`,
+                text: `🏦 ธนาคาร: ${bankName} ${bankAccount}${bankAccountName ? ` (${bankAccountName})` : ''}`,
+                size: 'xs',
+                color: '#15803D',
+                margin: 'xs'
+              }] : []),
+              ...(!promptPay && !(bankName && bankAccount) ? [{
+                type: 'text',
+                text: '📲 ติดต่อหอพักเพื่อรับเลขที่บัญชีชำระเงิน',
                 size: 'xs',
                 color: '#15803D',
                 margin: 'xs'
@@ -788,7 +832,7 @@ function createBillFlexMessage(bill: any, property: any, customNote?: string) {
           },
 
           // Optional custom note
-          ...(customNote ? [{
+          ...(trimmedNote ? [{
             type: 'box',
             layout: 'vertical',
             margin: 'md',
@@ -798,7 +842,7 @@ function createBillFlexMessage(bill: any, property: any, customNote?: string) {
             contents: [
               {
                 type: 'text',
-                text: `💬 ข้อความจากหอพัก: ${customNote}`,
+                text: `💬 ข้อความจากหอพัก: ${trimmedNote}`,
                 size: 'xs',
                 color: '#92400E',
                 wrap: true
@@ -820,10 +864,8 @@ function createBillFlexMessage(bill: any, property: any, customNote?: string) {
             color: '#06C755',
             action: {
               type: 'uri',
-              label: '💬 ส่งสลิปแจ้งโอน / ติดต่อหอพัก',
-              uri: property?.lineId 
-                ? (property.lineId.startsWith('@') ? `https://line.me/R/ti/p/${property.lineId}` : `https://line.me/R/ti/p/@${property.lineId}`)
-                : 'https://line.me/R/ti/p/@141xvjme'
+              label: '💬 ส่งสลิปแจ้งโอน',
+              uri: sanitizeLineContactUri(property?.lineId)
             }
           }
         ]
@@ -1083,10 +1125,8 @@ function createContractFlexMessage(contract: any, property: any, customNote?: st
             color: '#4F46E5',
             action: {
               type: 'uri',
-              label: '💬 สอบถามข้อมูลสัญญา / ติดต่อหอพัก',
-              uri: property?.lineId 
-                ? (property.lineId.startsWith('@') ? `https://line.me/R/ti/p/${property.lineId}` : `https://line.me/R/ti/p/@${property.lineId}`)
-                : 'https://line.me/R/ti/p/@141xvjme'
+              label: '💬 ติดต่อหอพัก',
+              uri: sanitizeLineContactUri(property?.lineId)
             }
           }
         ]
